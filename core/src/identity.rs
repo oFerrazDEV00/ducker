@@ -40,7 +40,8 @@ impl DeviceIdentity {
             return Ok(None);
         }
         let content = std::fs::read_to_string(path)?;
-        let identity: Self = serde_json::from_str(&content)?;
+        let clean_content = content.strip_prefix('\u{feff}').unwrap_or(&content);
+        let identity: Self = serde_json::from_str(clean_content)?;
         Ok(Some(identity))
     }
 
@@ -93,5 +94,19 @@ mod tests {
 
         let loaded = DeviceIdentity::load_from_path(&path).unwrap().unwrap();
         assert_eq!(identity, loaded);
+    }
+
+    #[test]
+    fn test_identity_with_utf8_bom() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("identity_bom.json");
+
+        // Simula arquivo salvo pelo Windows PowerShell com BOM
+        let content = "\u{feff}{\"device_name\": \"Notebook do Fael\", \"quac_id\": 84726193}";
+        std::fs::write(&path, content).unwrap();
+
+        let loaded = DeviceIdentity::load_from_path(&path).unwrap().unwrap();
+        assert_eq!(loaded.device_name, "Notebook do Fael");
+        assert_eq!(loaded.quac_id, 84726193);
     }
 }
