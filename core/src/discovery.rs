@@ -149,6 +149,12 @@ impl DiscoveryManager {
         Ok(())
     }
 
+    /// Registra manualmente um dispositivo (ex: cliente Mobile conectado via bridge)
+    pub async fn register_device(&self, device: DiscoveredDevice) {
+        let mut lock = self.devices.write().await;
+        lock.insert(device.quac_id, device);
+    }
+
     /// Retorna lista de dispositivos ativos na rede (vistos nos últimos 6 segundos)
     pub async fn list_devices(&self) -> Vec<DiscoveredDevice> {
         let mut lock = self.devices.write().await;
