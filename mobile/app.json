@@ -15,12 +15,22 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.ducker.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#0f172a"
       }
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-status-bar"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e524f3d3-e41b-475e-bf5f-2af1dac14dde"
+      }
     }
   }
 }
