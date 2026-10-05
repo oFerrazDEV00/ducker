@@ -15,17 +15,22 @@ pub async fn execute(identity: &DeviceIdentity, custom_save_dir: Option<PathBuf>
     println!("  Status:      Aguardando conexões na rede local (Porta {})...\n", DEFAULT_TRANSFER_PORT);
 
     // Iniciar anúncio e escuta de descoberta
-    let discovery = std::sync::Arc::new(DiscoveryManager::new(identity.clone()));
+    let discovery = DiscoveryManager::new(identity.clone());
     if let Err(e) = discovery.start().await {
         eprintln!("Aviso: Falha ao iniciar serviço de descoberta: {}", e);
     }
 
-    // Iniciar Mobile Bridge para conexões do Celular (WebSockets / HTTP)
-    let bridge = ducker_core::MobileBridge::new(identity.clone(), std::sync::Arc::clone(&discovery));
+    // Iniciar Mobile Bridge para conexões do Celular (WebSockets / Uploads HTTP)
+    let bridge = ducker_core::MobileBridge::with_port_and_save_dir(
+        identity.clone(),
+        std::sync::Arc::new(DiscoveryManager::new(identity.clone())),
+        ducker_core::DEFAULT_MOBILE_BRIDGE_PORT,
+        save_dir.clone(),
+    );
     if let Err(e) = bridge.start().await {
-        eprintln!("Aviso: Falha ao iniciar Mobile Bridge: {}", e);
+        eprintln!("Aviso: Falha ao iniciar Mobile Bridge na porta {}: {}", ducker_core::DEFAULT_MOBILE_BRIDGE_PORT, e);
     } else {
-        println!("  Mobile:      Bridge ativo para Celular na porta {}", ducker_core::DEFAULT_MOBILE_BRIDGE_PORT);
+        println!("  Mobile:      Bridge ativo para Celular (Porta {}) — pronto para receber fotos, arquivos e mensagens!", ducker_core::DEFAULT_MOBILE_BRIDGE_PORT);
     }
 
     // Iniciar servidor receptor

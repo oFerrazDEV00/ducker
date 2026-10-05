@@ -161,7 +161,37 @@ impl FileReceiver {
         // 3. Validação estrita do ID Quac de destino
         match request.validate_destination(identity.quac_id) {
             Ok(()) => {
-                // ID correto: responder com ACCEPTED
+                // Pergunta ao usuário se aceita o arquivo
+                let prompt_msg = format!(
+                    "Deseja aceitar o arquivo:\n\"{}\" ({:.2} MB)\n\nEnviado por: {} [Quac: {}]?",
+                    request.file_name,
+                    (request.file_size as f64) / 1024.0 / 1024.0,
+                    request.sender_name,
+                    request.sender_quac_id
+                );
+                let accepted = tokio::task::spawn_blocking(move || {
+                    crate::dialog::prompt_user_acceptance("Ducker - Transferência Recebida", &prompt_msg)
+                })
+                .await
+                .unwrap_or(true);
+
+                if !accepted {
+                    let err = DuckerError::TransferFailed("Transferência recusada pelo usuário no PC.".into());
+                    let response = TransferHandshakeResponse::rejected(&err);
+                    let resp_bytes = serde_json::to_vec(&response)?;
+                    let resp_len = (resp_bytes.len() as u32).to_be_bytes();
+                    stream.write_all(&resp_len).await?;
+                    stream.write_all(&resp_bytes).await?;
+                    stream.flush().await?;
+
+                    let _ = events.send(TransferEvent::Rejected {
+                        reason: err.code(),
+                        message: err.user_friendly_message(),
+                    });
+                    return Err(err);
+                }
+
+                // ID correto e aceito: responder com ACCEPTED
                 let response = TransferHandshakeResponse::accepted();
                 let resp_bytes = serde_json::to_vec(&response)?;
                 let resp_len = (resp_bytes.len() as u32).to_be_bytes();

@@ -33,14 +33,37 @@ enum Commands {
         #[arg(long)]
         to: Option<u32>,
     },
+    /// Envia um arquivo ou mensagem curta para o app Ducker Mobile
+    Mobile {
+        /// Caminho do arquivo a ser enviado
+        file: Option<PathBuf>,
+        /// Enviar mensagem de texto curta diretamente (cria mensagem.txt)
+        #[arg(short, long)]
+        msg: Option<String>,
+        /// (Opcional) ID Quac do celular de destino
+        #[arg(long)]
+        to: Option<u32>,
+    },
     /// Inicia o serviço de escuta e recebimento de arquivos
     Receive {
         /// Diretório personalizado para salvar os arquivos recebidos
         #[arg(short, long)]
         save_dir: Option<PathBuf>,
     },
+    /// Executa o receptor em segundo plano (você pode fechar o terminal)
+    Background,
+    /// Encerra processos do Ducker rodando em segundo plano
+    Stop,
+    /// Configura o Ducker para iniciar com o Windows (enable | disable)
+    Autostart {
+        /// Ação a ser executada: enable (padrão) ou disable
+        #[arg(default_value = "enable")]
+        action: String,
+    },
     /// Executa o diagnóstico de rede, portas e permissões do Ducker
     Doctor,
+    /// Abre a interface visual e o painel de controle com todos os comandos
+    Open,
 }
 
 #[tokio::main]
@@ -92,17 +115,37 @@ async fn main() {
                 commands::send::execute(id, file, target, to).await;
             }
         }
+        Some(Commands::Mobile { file, msg, to }) => {
+            if let Some(id) = identity.as_ref() {
+                commands::mobile::execute(id, file, msg, to).await;
+            }
+        }
         Some(Commands::Receive { save_dir }) => {
             if let Some(id) = identity.as_ref() {
                 commands::receive::execute(id, save_dir).await;
             }
         }
+        Some(Commands::Background) => {
+            commands::service::start_background();
+        }
+        Some(Commands::Stop) => {
+            commands::service::stop_background();
+        }
+        Some(Commands::Autostart { action }) => {
+            let enable = !action.eq_ignore_ascii_case("disable");
+            commands::service::configure_autostart(enable);
+        }
         Some(Commands::Doctor) => {
             commands::doctor::execute(identity.as_ref());
         }
+        Some(Commands::Open) => {
+            if let Some(id) = identity.as_ref() {
+                commands::open::execute(id).await;
+            }
+        }
         None => {
             if let Some(id) = identity.as_ref() {
-                commands::receive::execute(id, None).await;
+                commands::open::execute(id).await;
             }
         }
     }

@@ -316,6 +316,7 @@ dependencies = [
  "clap",
  "console",
  "dialoguer",
+ "dirs",
  "ducker-core",
  "indicatif",
  "tokio",
