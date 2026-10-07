@@ -156,3 +156,19 @@ cargo run -p ducker-cli -- send .\README.md --to <alias>
     - `dd99f44` feat(app): integrate native file picker dialog via rfd for desktop UI
     - `8cd515b` fix(stability): fix peer flickering with TTL retention, broadcast discovery, and robust peer lookup for transfers
     - `2ff61c0` fix(tls): support LocalSend mTLS by presenting client certificate during TLS handshake
+- 2026-10-07 — Sessão 3 (Gemini):
+  * **Redesign completo da UI (Desktop & Mobile):**
+    - Layout desktop 1:1 com os mockups Dark/Light/Yellow fornecidos pelo usuário.
+    - Sidebar de navegação esquerda ("Início", "Dispositivos", "Transferências", "Configurações") com o mascote Ducker pixel art e slogan *"Be simple, be duck."*.
+    - Header com boas-vindas ao usuário, badge "Online" pulsante e avatar.
+    - Card de topo com indicador de "Rede local ativa" e contagem dinâmica de peers.
+    - Cards de dispositivos modernos com ícones dedicados (mobile, desktop, laptop, raspberry pi) e status verde.
+    - Painel direito de transferência com drag & drop, botão amarelo "Selecionar arquivos" e lista de transferências recentes persistida no `localStorage`.
+    - Suporte a temas alternáveis (Dark, Light, Yellow) em Configurações.
+    - Layout responsivo mobile com bottom navigation bar ("Início", "Dispositivos", "Transferências", "Mais") e botão de ação amarelo flutuante `+ Enviar arquivos`.
+  * **Estrutura de Builds Mobile (APK e IPA):**
+    - Ajustadas dependências do Tauri no `Cargo.toml` (`rfd` isolado condicionalmente apenas em plataformas desktop).
+    - Criado workflow de CI/CD do GitHub Actions (`.github/workflows/build-mobile.yml`):
+      * Job Android: compilação automática dos APKs (arm64, armv7, x86_64) via Ubuntu runner com NDK e upload como artefatos de download.
+      * Job iOS: compilação automática do IPA unsigned compatível com AltStore/Sideloadly via runner macOS.
+    - Criados scripts auxiliares locais em `scripts/` (`setup-mobile-env.bat` e `build-apk-local.bat`).

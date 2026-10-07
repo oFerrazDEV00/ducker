@@ -62,17 +62,24 @@ async fn scan_network(state: State<'_, Arc<AppState>>) -> Result<usize, String> 
 
 #[tauri::command]
 async fn pick_files() -> Result<Vec<String>, String> {
-    let files = rfd::AsyncFileDialog::new()
-        .set_title("Ducker — Selecione arquivos para enviar")
-        .pick_files()
-        .await;
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let files = rfd::AsyncFileDialog::new()
+            .set_title("Ducker — Selecione arquivos para enviar")
+            .pick_files()
+            .await;
 
-    match files {
-        Some(handles) => Ok(handles
-            .into_iter()
-            .map(|h| h.path().to_string_lossy().to_string())
-            .collect()),
-        None => Ok(vec![]),
+        match files {
+            Some(handles) => Ok(handles
+                .into_iter()
+                .map(|h| h.path().to_string_lossy().to_string())
+                .collect()),
+            None => Ok(vec![]),
+        }
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        Ok(vec![])
     }
 }
 
@@ -171,6 +178,10 @@ async fn open_save_dir(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = dir;
     }
 
     Ok(())
