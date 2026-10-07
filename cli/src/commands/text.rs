@@ -1,26 +1,17 @@
-use std::path::PathBuf;
 use std::time::Duration;
 use console::style;
 use dialoguer::Select;
 use ducker_core::{default_save_dir, Identity, Node, NodeConfig, Peer, SendOptions};
-use crate::ui::{create_transfer_progress_bar, ERROR, SEARCH, SUCCESS};
+use crate::ui::{ERROR, SEARCH, SUCCESS};
 
 pub async fn execute(
     identity: &Identity,
-    paths: Vec<PathBuf>,
+    text: String,
     to_query: Option<String>,
-    pin: Option<String>,
 ) {
-    if paths.is_empty() {
-        eprintln!("{} Nenhum arquivo ou pasta informado para envio.", ERROR);
+    if text.trim().is_empty() {
+        eprintln!("{} Mensagem de texto não pode ser vazia.", ERROR);
         return;
-    }
-
-    for p in &paths {
-        if !p.exists() {
-            eprintln!("{} Caminho não encontrado: {}", ERROR, p.display());
-            return;
-        }
     }
 
     let mut config = NodeConfig::new(identity.clone(), default_save_dir());
@@ -30,16 +21,14 @@ pub async fn execute(
     let (node, _events) = match Node::start(config).await {
         Ok(n) => n,
         Err(e) => {
-            eprintln!("{} Falha ao iniciar cliente de envio: {}", ERROR, e);
+            eprintln!("{} Falha ao iniciar cliente: {}", ERROR, e);
             return;
         }
     };
 
-    println!("\n{} {}", SEARCH, style("Localizando destinatário...").bold());
+    println!("\n{} {}", SEARCH, style("Localizando destinatário para mensagem...").bold());
 
-    // Se o usuário passou um IP ou IP:Porta direto
     let target_peer: Peer = if let Some(ref q) = to_query {
-        // Tentar parsing de SocketAddr ou IP
         if let Ok(addr) = q.parse::<std::net::SocketAddr>() {
             match node.connect(addr.ip(), addr.port()).await {
                 Ok(p) => p,
@@ -59,13 +48,10 @@ pub async fn execute(
                 }
             }
         } else {
-            // Aguardar descoberta por multicast
             tokio::time::sleep(Duration::from_millis(1500)).await;
             match node.find_peer(q) {
                 Some(p) => p,
                 None => {
-                    // Tentar scan na sub-rede
-                    println!("{}", style("Dispositivo não encontrado no anúncio inicial; tentando scan na rede...").dim());
                     node.scan_subnet().await;
                     match node.find_peer(q) {
                         Some(p) => p,
@@ -79,18 +65,15 @@ pub async fn execute(
             }
         }
     } else {
-        // Sem --to, fazer descoberta interativa
         tokio::time::sleep(Duration::from_millis(1800)).await;
         let mut peers = node.peers();
         if peers.is_empty() {
-            println!("{}", style("Nenhum dispositivo anunciou via multicast; executando scan rápido...").dim());
             node.scan_subnet().await;
             peers = node.peers();
         }
 
         if peers.is_empty() {
-            eprintln!("\n{} Nenhum dispositivo Ducker ou LocalSend encontrado na rede.", ERROR);
-            eprintln!("Certifique-se de que o destinatário está na mesma rede e executando o aplicativo.");
+            eprintln!("\n{} Nenhum dispositivo encontrado na rede local.", ERROR);
             node.shutdown();
             return;
         }
@@ -121,38 +104,24 @@ pub async fn execute(
     };
 
     println!(
-        "\nEnviando para {} ({}://{}:{})...",
-        style(&target_peer.info.alias).cyan().bold(),
-        target_peer.protocol.scheme(),
-        target_peer.ip,
-        target_peer.port
+        "\nEnviando texto para {}...",
+        style(&target_peer.info.alias).cyan().bold()
     );
 
-    let pb = create_transfer_progress_bar(0, "arquivos");
-    let pb_clone = pb.clone();
-
     let opts = SendOptions {
-        pin,
+        pin: None,
         expected_quac: target_peer.info.quac_id,
     };
 
-    let result = node.send_files(&target_peer, paths, opts, move |progress| {
-        if pb_clone.length().unwrap_or(0) != progress.total {
-            pb_clone.set_length(progress.total);
-        }
-        pb_clone.set_position(progress.total_sent);
-        pb_clone.set_message(format!("Enviando {}", progress.file_name));
-    }).await;
-
-    pb.finish_and_clear();
+    let result = node.send_text(&target_peer, &text, opts).await;
     node.shutdown();
 
     match result {
         Ok(()) => {
-            println!("\n{} {}", SUCCESS, style("Transferência concluída com sucesso!").green().bold());
+            println!("\n{} {}", SUCCESS, style("Mensagem enviada com sucesso!").green().bold());
         }
         Err(e) => {
-            eprintln!("\n{} Falha no envio: {}", ERROR, style(e.to_string()).red().bold());
+            eprintln!("\n{} Falha no envio da mensagem: {}", ERROR, style(e.to_string()).red().bold());
         }
     }
 }

@@ -1,61 +1,62 @@
-use std::net::TcpListener;
+use std::net::{TcpListener, UdpSocket};
 use console::style;
-use ducker_core::{
-    DeviceIdentity, DiscoveryManager, FileReceiver, DEFAULT_DISCOVERY_PORT, DEFAULT_TRANSFER_PORT,
-};
+use ducker_core::{default_save_dir, discovery::local_ipv4s, Identity, DEFAULT_PORT};
 use crate::ui::{DUCK, ERROR, SUCCESS};
 
-pub fn execute(identity: Option<&DeviceIdentity>) {
-    println!("\n{} {}", DUCK, style("Ducker Doctor — Diagnóstico do Sistema").bold());
-    println!("{}", style("----------------------------------------").dim());
+pub fn execute(identity: Option<&Identity>) {
+    println!("\n{} {}", DUCK, style("Ducker Doctor — Diagnóstico do Sistema (LocalSend v2)").bold());
+    println!("{}", style("---------------------------------------------------------").dim());
 
     // 1. Identidade
     match identity {
         Some(id) => {
             println!(
-                "{} Identidade configurada: {} [ID Quac: {}]",
+                "{} Identidade: {} [ID Quac: {}]",
                 SUCCESS,
-                style(&id.device_name).cyan(),
-                style(id.quac_id).green()
+                style(&id.alias).cyan().bold(),
+                style(id.quac_id).green().bold()
             );
+            println!("   Fingerprint: {}", style(&id.fingerprint).yellow());
         }
         None => {
             println!("{} Identidade ainda não foi inicializada.", style("!").yellow());
         }
     }
 
-    // 2. IP Local
-    match DiscoveryManager::get_local_ip() {
-        Some(ip) => {
-            println!("{} IP de rede local identificado: {}", SUCCESS, style(ip).cyan());
+    // 2. Interfaces IPv4
+    let ips = local_ipv4s();
+    if ips.is_empty() {
+        println!("{} Nenhuma interface de rede IPv4 local ativa encontrada.", ERROR);
+    } else {
+        let ip_strs: Vec<String> = ips.iter().map(|ip| ip.to_string()).collect();
+        println!("{} Interfaces IPv4 ativas: {}", SUCCESS, style(ip_strs.join(", ")).cyan());
+    }
+
+    // 3. Porta TCP 53317 (Servidor HTTP/HTTPS)
+    match TcpListener::bind(("0.0.0.0", DEFAULT_PORT)) {
+        Ok(_) => {
+            println!("{} Porta padrão {} (TCP) está livre para uso.", SUCCESS, DEFAULT_PORT);
         }
-        None => {
-            println!("{} Não foi possível identificar o IP local da rede.", ERROR);
+        Err(e) => {
+            println!(
+                "{} Porta padrão {} (TCP) ocupada ou bloqueada: {} (outro Ducker/LocalSend ativo?)",
+                ERROR, DEFAULT_PORT, e
+            );
         }
     }
 
-    // 3. Porta TCP (Transferência)
-    match TcpListener::bind(("0.0.0.0", DEFAULT_TRANSFER_PORT)) {
+    // 4. Porta UDP 53317 (Descoberta Multicast)
+    match UdpSocket::bind(("0.0.0.0", DEFAULT_PORT)) {
         Ok(_) => {
-            println!("{} Porta de transferência {} (TCP) está livre para uso.", SUCCESS, DEFAULT_TRANSFER_PORT);
+            println!("{} Porta padrão {} (UDP Multicast) está livre para uso.", SUCCESS, DEFAULT_PORT);
         }
         Err(e) => {
-            println!("{} Porta de transferência {} (TCP) ocupada ou indisponível: {}", ERROR, DEFAULT_TRANSFER_PORT, e);
-        }
-    }
-
-    // 4. Porta UDP (Descoberta)
-    match std::net::UdpSocket::bind(("0.0.0.0", DEFAULT_DISCOVERY_PORT)) {
-        Ok(_) => {
-            println!("{} Porta de descoberta {} (UDP) está livre para uso.", SUCCESS, DEFAULT_DISCOVERY_PORT);
-        }
-        Err(e) => {
-            println!("{} Porta de descoberta {} (UDP) ocupada ou indisponível: {}", ERROR, DEFAULT_DISCOVERY_PORT, e);
+            println!("{} Porta padrão {} (UDP) ocupada ou bloqueada: {}", ERROR, DEFAULT_PORT, e);
         }
     }
 
     // 5. Diretório de downloads
-    let save_dir = FileReceiver::default_save_dir();
+    let save_dir = default_save_dir();
     match std::fs::create_dir_all(&save_dir) {
         Ok(_) => {
             println!("{} Diretório de recebimento acessível: {}", SUCCESS, style(save_dir.display()).dim());

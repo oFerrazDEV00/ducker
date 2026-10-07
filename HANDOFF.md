@@ -99,10 +99,10 @@ Marque `[x]` ao concluir. Itens em ordem de dependência.
 - [x] `cargo test -p ducker-core` verde
 
 ### Fase 2 — CLI (`cli/`)
-- [ ] Reescrever comandos: `id`, `serve` (alias `receive`), `devices`, `send <arquivos...> --to <alias|fingerprint|quac|ip[:porta]>`, `text "msg" --to`, `doctor`, `background`, `stop`, `autostart`
-- [ ] Remover `mobile.rs`, `open.rs`
-- [ ] Prompt de aceite via `dialoguer` (ou `--yes`)
-- [ ] `cargo build -p ducker-cli` verde
+- [x] Reescrever comandos: `id`, `serve` (alias `receive`), `devices`, `send <arquivos...> --to <alias|fingerprint|quac|ip[:porta]>`, `text "msg" --to`, `doctor`, `background`, `stop`, `autostart`
+- [x] Remover `mobile.rs`, `open.rs`
+- [x] Prompt de aceite via `dialoguer` (ou `--yes`)
+- [x] `cargo build -p ducker-cli` verde
 
 ### Fase 3 — App Tauri (`app/`)
 - [ ] Apagar `mobile/` (Expo)

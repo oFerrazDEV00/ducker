@@ -1,105 +1,123 @@
 use std::path::PathBuf;
 use console::style;
-use ducker_core::{
-    DeviceIdentity, DiscoveryManager, FileReceiver, TransferEvent, DEFAULT_TRANSFER_PORT,
-};
+use dialoguer::Confirm;
+use ducker_core::{default_save_dir, Identity, Node, NodeConfig, NodeEvent};
 use crate::ui::{create_transfer_progress_bar, DUCK, ERROR, SUCCESS};
 
-pub async fn execute(identity: &DeviceIdentity, custom_save_dir: Option<PathBuf>) {
-    let save_dir = custom_save_dir.unwrap_or_else(FileReceiver::default_save_dir);
+pub async fn execute(
+    identity: &Identity,
+    custom_save_dir: Option<PathBuf>,
+    port: Option<u16>,
+    auto_accept: bool,
+    pin: Option<String>,
+) {
+    let save_dir = custom_save_dir.unwrap_or_else(default_save_dir);
+    let _ = std::fs::create_dir_all(&save_dir);
 
-    println!("\n{} {}", DUCK, style("Ducker está pronto para receber arquivos!").bold().yellow());
-    println!("  Dispositivo: {}", style(&identity.device_name).cyan().bold());
-    println!("  ID Quac:     {}", style(identity.quac_id).green().bold());
-    println!("  Destino:     {}", style(save_dir.display()).dim());
-    println!("  Status:      Aguardando conexões na rede local (Porta {})...\n", DEFAULT_TRANSFER_PORT);
-
-    // Iniciar anúncio e escuta de descoberta
-    let discovery = DiscoveryManager::new(identity.clone());
-    if let Err(e) = discovery.start().await {
-        eprintln!("Aviso: Falha ao iniciar serviço de descoberta: {}", e);
+    let mut config = NodeConfig::new(identity.clone(), save_dir.clone());
+    if let Some(p) = port {
+        config.port = p;
     }
+    config.auto_accept = auto_accept;
+    config.pin = pin;
 
-    // Iniciar Mobile Bridge para conexões do Celular (WebSockets / Uploads HTTP)
-    let bridge = ducker_core::MobileBridge::with_port_and_save_dir(
-        identity.clone(),
-        std::sync::Arc::new(DiscoveryManager::new(identity.clone())),
-        ducker_core::DEFAULT_MOBILE_BRIDGE_PORT,
-        save_dir.clone(),
-    );
-    if let Err(e) = bridge.start().await {
-        eprintln!("Aviso: Falha ao iniciar Mobile Bridge na porta {}: {}", ducker_core::DEFAULT_MOBILE_BRIDGE_PORT, e);
+    let (node, mut events) = match Node::start(config).await {
+        Ok(res) => res,
+        Err(e) => {
+            eprintln!("{} Falha ao iniciar receptor: {}", ERROR, e);
+            return;
+        }
+    };
+
+    println!("\n{} {}", DUCK, style("Ducker está pronto e ouvindo na rede local!").bold().yellow());
+    println!("  Dispositivo:  {}", style(&identity.alias).cyan().bold());
+    println!("  ID Quac:      {}", style(identity.quac_id).green().bold());
+    println!("  Fingerprint:  {}", style(&identity.fingerprint[..12]).dim());
+    println!("  Porta:        {} ({})", style(node.port()).bold(), node.config().protocol.scheme());
+    println!("  Pasta Destino:{}", style(save_dir.display()).dim());
+    if auto_accept {
+        println!("  Modo:         {}", style("Aceite automático ATIVADO (--yes)").green());
     } else {
-        println!("  Mobile:      Bridge ativo para Celular (Porta {}) — pronto para receber fotos, arquivos e mensagens!", ducker_core::DEFAULT_MOBILE_BRIDGE_PORT);
+        println!("  Modo:         {}", style("Confirmação interativa no terminal").yellow());
     }
-
-    // Iniciar servidor receptor
-    let (receiver, mut events) = FileReceiver::new(identity.clone(), save_dir.clone());
-    if let Err(e) = receiver.start().await {
-        eprintln!("{} Falha ao iniciar servidor receptor: {}", ERROR, e);
-        return;
-    }
+    println!("\n{}", style("Aguardando conexões... Pressione Ctrl+C para encerrar.").dim());
 
     let mut current_pb: Option<indicatif::ProgressBar> = None;
 
     while let Ok(event) = events.recv().await {
         match event {
-            TransferEvent::IncomingRequest {
-                sender_name,
-                sender_quac_id,
-                destination_quac_id,
-                file_name,
-                file_size,
-            } => {
+            NodeEvent::IncomingRequest { session_id, sender, files, auto_accepted } => {
+                let total_size: u64 = files.iter().map(|f| f.size).sum();
+                let count = files.len();
+                let file_names: Vec<&str> = files.iter().map(|f| f.file_name.as_str()).collect();
+
                 println!(
-                    "\nRecebendo solicitação de transferência:\n  Arquivo:  {} ({:.2} MB)\n  De:       {} [Quac: {}]\n  Para ID:  {}",
-                    style(&file_name).bold(),
-                    (file_size as f64) / 1024.0 / 1024.0,
-                    style(&sender_name).cyan(),
-                    style(sender_quac_id).green(),
-                    style(destination_quac_id).yellow()
+                    "\n{} Pedido de transferência de {} [fp: {}]:",
+                    style("➤").cyan().bold(),
+                    style(&sender.alias).cyan().bold(),
+                    style(if sender.fingerprint.len() >= 8 { &sender.fingerprint[..8] } else { "n/a" }).dim()
                 );
-                current_pb = Some(create_transfer_progress_bar(file_size, &file_name));
-            }
-            TransferEvent::Progress {
-                bytes_received,
-                total_bytes,
-                ..
-            } => {
-                if let Some(ref pb) = current_pb {
-                    pb.set_length(total_bytes);
-                    pb.set_position(bytes_received);
+                println!(
+                    "  {} arquivo(s) ({:.2} MB): {}",
+                    count,
+                    (total_size as f64) / 1024.0 / 1024.0,
+                    style(file_names.join(", ")).italic()
+                );
+
+                if !auto_accepted {
+                    let prompt = format!("Deseja aceitar o recebimento de {}?", sender.alias);
+                    let accepted = Confirm::new()
+                        .with_prompt(prompt)
+                        .default(true)
+                        .interact()
+                        .unwrap_or(false);
+
+                    if accepted {
+                        println!("  Aceitando transferência...");
+                        node.respond(&session_id, true);
+                    } else {
+                        println!("  Transferência recusada.");
+                        node.respond(&session_id, false);
+                    }
                 }
             }
-            TransferEvent::Completed { file_name, saved_path } => {
+            NodeEvent::ReceiveProgress { file_id: _, received, total, .. } => {
+                let pb = current_pb.get_or_insert_with(|| create_transfer_progress_bar(total, "arquivo"));
+                pb.set_length(total);
+                pb.set_position(received);
+            }
+            NodeEvent::FileReceived { file_name, path, .. } => {
                 if let Some(pb) = current_pb.take() {
                     pb.finish_and_clear();
                 }
                 println!(
-                    "{} {} {}",
+                    "{} Arquivo '{}' salvo com sucesso em:\n  {}",
                     SUCCESS,
                     style(&file_name).bold(),
-                    style("recebido com sucesso!").green().bold()
+                    style(path).dim()
                 );
-                println!("  Salvo em: {}\n", style(saved_path.display()).dim());
             }
-            TransferEvent::Rejected { reason, message } => {
+            NodeEvent::TextReceived { sender, text } => {
+                println!(
+                    "\n{} Mensagem recebida de {}:\n  {}",
+                    style("✉").yellow().bold(),
+                    style(&sender.alias).cyan().bold(),
+                    style(text).white().bold()
+                );
+            }
+            NodeEvent::SessionFinished { session_id: _ } => {
                 if let Some(pb) = current_pb.take() {
                     pb.finish_and_clear();
                 }
-                eprintln!(
-                    "\n{} Transferência rejeitada [{}]:\n  {}",
-                    ERROR,
-                    style(reason.as_str()).red().bold(),
-                    style(message).red()
-                );
+                println!("\n{} Transferência concluída!\n", SUCCESS);
             }
-            TransferEvent::Failed { file_name, error } => {
+            NodeEvent::SessionCancelled { session_id: _ } => {
                 if let Some(pb) = current_pb.take() {
                     pb.finish_and_clear();
                 }
-                eprintln!("\n{} Falha ao receber {}: {}", ERROR, file_name, error);
+                println!("\n{} Sessão cancelada ou recusada.\n", style("!").yellow());
             }
+            NodeEvent::PeerDiscovered { .. } => {}
         }
     }
 }

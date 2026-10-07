@@ -2,14 +2,14 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use console::style;
 use dialoguer::Input;
-use ducker_core::DeviceIdentity;
+use ducker_core::{default_alias, Identity};
 
 mod commands;
 mod ui;
 
 #[derive(Parser)]
 #[command(name = "ducker")]
-#[command(about = "Ducker — Be simple, be duck. 🦆 Local-first file transfer", long_about = None)]
+#[command(about = "Ducker — Be simple, be duck. 🦆 Local-first file transfer (LocalSend v2 protocol)", long_about = None)]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
@@ -18,37 +18,63 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Mostra a identidade do dispositivo e o ID Quac atual
+    /// Mostra a identidade deste dispositivo, ID Quac e fingerprint SHA-256
     Id,
-    /// Busca e lista os dispositivos Ducker ativos na mesma rede local
-    Devices,
-    /// Envia um arquivo para outro dispositivo na rede
+    /// Busca e lista os dispositivos ativos na mesma rede local
+    Devices {
+        /// Forçar varredura completa da sub-rede local (útil quando multicast estiver desabilitado no Wi-Fi)
+        #[arg(long)]
+        scan: bool,
+    },
+    /// Envia arquivos ou pastas para outro dispositivo na rede
     Send {
-        /// Caminho do arquivo a ser enviado
-        file: PathBuf,
-        /// (Opcional) Endereço direto no formato IP:PORTA
+        /// Caminhos dos arquivos ou pastas a serem enviados
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+        /// Destinatário: Apelido, ID Quac, prefixo do fingerprint, ou IP:Porta
         #[arg(long)]
-        target: Option<String>,
-        /// (Opcional) ID Quac específico do destinatário para validação
+        to: Option<String>,
+        /// PIN de segurança opcional se exigido pelo destinatário
         #[arg(long)]
-        to: Option<u32>,
+        pin: Option<String>,
     },
-    /// Envia um arquivo ou mensagem curta para o app Ducker Mobile
-    Mobile {
-        /// Caminho do arquivo a ser enviado
-        file: Option<PathBuf>,
-        /// Enviar mensagem de texto curta diretamente (cria mensagem.txt)
+    /// Envia uma mensagem de texto diretamente para outro dispositivo
+    Text {
+        /// Texto da mensagem a ser enviada
+        message: String,
+        /// Destinatário: Apelido, ID Quac, prefixo do fingerprint, ou IP:Porta
+        #[arg(long)]
+        to: Option<String>,
+    },
+    /// Inicia o serviço de escuta e recebimento de arquivos (protocolo LocalSend v2)
+    Serve {
+        /// Diretório personalizado para salvar os arquivos recebidos
         #[arg(short, long)]
-        msg: Option<String>,
-        /// (Opcional) ID Quac do celular de destino
+        save_dir: Option<PathBuf>,
+        /// Porta TCP do servidor (padrão: 53317)
+        #[arg(short, long)]
+        port: Option<u16>,
+        /// Aceitar todas as transferências automaticamente sem confirmação no terminal
+        #[arg(short = 'y', long)]
+        yes: bool,
+        /// Exigir PIN para aceitar transferências
         #[arg(long)]
-        to: Option<u32>,
+        pin: Option<String>,
     },
-    /// Inicia o serviço de escuta e recebimento de arquivos
+    /// Alias para 'serve': escuta e recebe arquivos na rede local
     Receive {
         /// Diretório personalizado para salvar os arquivos recebidos
         #[arg(short, long)]
         save_dir: Option<PathBuf>,
+        /// Porta TCP do servidor (padrão: 53317)
+        #[arg(short, long)]
+        port: Option<u16>,
+        /// Aceitar todas as transferências automaticamente sem confirmação no terminal
+        #[arg(short = 'y', long)]
+        yes: bool,
+        /// Exigir PIN para aceitar transferências
+        #[arg(long)]
+        pin: Option<String>,
     },
     /// Executa o receptor em segundo plano (você pode fechar o terminal)
     Background,
@@ -60,43 +86,49 @@ enum Commands {
         #[arg(default_value = "enable")]
         action: String,
     },
-    /// Executa o diagnóstico de rede, portas e permissões do Ducker
+    /// Executa o diagnóstico de rede, portas e certificados
     Doctor,
-    /// Abre a interface visual e o painel de controle com todos os comandos
-    Open,
 }
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
 
-    // Carregar ou inicializar identidade na primeira execução
-    let mut identity = match DeviceIdentity::load_default() {
+    let config_dir = Identity::default_config_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    // Carregar identidade existente ou criar interativamente
+    let mut identity = match Identity::load(&config_dir) {
         Ok(Some(id)) => Some(id),
         Ok(None) => None,
         Err(e) => {
-            eprintln!("Aviso ao carregar identidade existente: {}", e);
+            eprintln!("Aviso ao carregar identidade: {}", e);
             None
         }
     };
 
-    // Se não houver identidade e não for apenas um doctor, executa o assistente de primeira execução
     if identity.is_none() && !matches!(cli.command, Some(Commands::Doctor)) {
         ui::print_banner();
         println!("\nBem-vindo ao {}!\n", style("Ducker").yellow().bold());
 
+        let def_name = default_alias();
         let name: String = Input::new()
-            .with_prompt("Nome do dispositivo")
+            .with_prompt("Nome / Apelido deste dispositivo na rede")
+            .default(def_name)
             .interact_text()
             .unwrap_or_else(|_| "Meu Dispositivo Ducker".to_string());
 
-        let new_id = DeviceIdentity::new(name.trim());
-        if let Err(e) = new_id.save_default() {
-            eprintln!("Erro ao salvar identidade: {}", e);
-        } else {
-            println!("\nSeu ID Quac: {}\n", style(new_id.quac_id).green().bold());
+        match Identity::load_or_create(&config_dir, name.trim()) {
+            Ok(new_id) => {
+                println!("\nDispositivo configurado com sucesso!");
+                println!("  Apelido:     {}", style(&new_id.alias).cyan().bold());
+                println!("  ID Quac:     {}", style(new_id.quac_id).green().bold());
+                println!("  Fingerprint: {}\n", style(&new_id.fingerprint).yellow());
+                identity = Some(new_id);
+            }
+            Err(e) => {
+                eprintln!("Erro ao inicializar identidade: {}", e);
+            }
         }
-        identity = Some(new_id);
     }
 
     match cli.command {
@@ -105,24 +137,25 @@ async fn main() {
                 commands::id::execute(id);
             }
         }
-        Some(Commands::Devices) => {
+        Some(Commands::Devices { scan }) => {
             if let Some(id) = identity.as_ref() {
-                commands::devices::execute(id).await;
+                commands::devices::execute(id, scan).await;
             }
         }
-        Some(Commands::Send { file, target, to }) => {
+        Some(Commands::Send { files, to, pin }) => {
             if let Some(id) = identity.as_ref() {
-                commands::send::execute(id, file, target, to).await;
+                commands::send::execute(id, files, to, pin).await;
             }
         }
-        Some(Commands::Mobile { file, msg, to }) => {
+        Some(Commands::Text { message, to }) => {
             if let Some(id) = identity.as_ref() {
-                commands::mobile::execute(id, file, msg, to).await;
+                commands::text::execute(id, message, to).await;
             }
         }
-        Some(Commands::Receive { save_dir }) => {
+        Some(Commands::Serve { save_dir, port, yes, pin })
+        | Some(Commands::Receive { save_dir, port, yes, pin }) => {
             if let Some(id) = identity.as_ref() {
-                commands::receive::execute(id, save_dir).await;
+                commands::receive::execute(id, save_dir, port, yes, pin).await;
             }
         }
         Some(Commands::Background) => {
@@ -138,14 +171,10 @@ async fn main() {
         Some(Commands::Doctor) => {
             commands::doctor::execute(identity.as_ref());
         }
-        Some(Commands::Open) => {
-            if let Some(id) = identity.as_ref() {
-                commands::open::execute(id).await;
-            }
-        }
         None => {
+            // Sem argumentos: executa o receptor em modo interativo
             if let Some(id) = identity.as_ref() {
-                commands::open::execute(id).await;
+                commands::receive::execute(id, None, None, false, None).await;
             }
         }
     }

@@ -41,7 +41,7 @@ pub fn start_background() {
         };
 
         match Command::new(&exe_path)
-            .arg("receive")
+            .args(["serve", "--yes"])
             .stdin(Stdio::null())
             .stdout(stdout_cfg)
             .stderr(stderr_cfg)
@@ -51,8 +51,8 @@ pub fn start_background() {
             Ok(_) => {
                 println!("{} {}", SUCCESS, style("Ducker está rodando em segundo plano!").green().bold());
                 println!("  • O terminal pode ser fechado livremente.");
-                println!("  • O PC está pronto para receber do iPhone ou de outros computadores.");
-                println!("  • Quando chegar um arquivo, uma caixa de confirmação [Sim / Não] aparecerá na tela.");
+                println!("  • O dispositivo está ouvindo no protocolo LocalSend v2 (porta 53317).");
+                println!("  • Aceite automático ativado (--yes) para execução sem terminal.");
                 println!("  • Logs salvos em: {}", style(log_path.display()).dim());
                 println!("  • Para parar o serviço quando quiser: {}", style("ducker stop").cyan());
             }
@@ -137,7 +137,7 @@ pub fn configure_autostart(enable: bool) {
 
             let vbs_content = format!(
                 "Set WshShell = CreateObject(\"WScript.Shell\")\n\
-                 cmd = \"cmd.exe /c \" & Chr(34) & Chr(34) & \"{}\" & Chr(34) & \" receive\" & Chr(34) & \" >> \" & Chr(34) & \"{}\" & Chr(34) & \" 2>&1\"\n\
+                 cmd = \"cmd.exe /c \" & Chr(34) & Chr(34) & \"{}\" & Chr(34) & \" serve --yes\" & Chr(34) & \" >> \" & Chr(34) & \"{}\" & Chr(34) & \" 2>&1\"\n\
                  WshShell.Run cmd, 0, False\n",
                 exe_path.display(),
                 log_path.display()
