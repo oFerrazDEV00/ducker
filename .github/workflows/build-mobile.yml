@@ -61,7 +61,7 @@ jobs:
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
       - name: Cache Cargo & Gradle
         uses: actions/cache@v4
@@ -96,7 +96,8 @@ jobs:
       - name: Build Android APK
         working-directory: ./app
         run: |
-          npx tauri android build --debug --apk
+          chmod +x src-tauri/gen/android/gradlew || true
+          npx tauri android build --ci --debug --apk
 
       - name: Collect APK Files
         run: |
@@ -134,7 +135,7 @@ jobs:
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-ios
+          targets: aarch64-apple-ios,x86_64-apple-ios,aarch64-apple-ios-sim
 
       - name: Cache Cargo
         uses: actions/cache@v4
@@ -159,7 +160,7 @@ jobs:
       - name: Build iOS Application (Unsigned)
         working-directory: ./app
         run: |
-          npx tauri ios build --debug --no-sign
+          npx tauri ios build --ci --debug --no-sign
 
       - name: Package IPA (AltStore / Sideloadly Compatible)
         run: |
