@@ -1,2 +1,6 @@
 @echo off
-"C:\Users\gabri\.cargo\bin\ducker.exe" open %*
+if exist "%~dp0target\debug\ducker-app.exe" (
+    start "" "%~dp0target\debug\ducker-app.exe" %*
+) else (
+    "%~dp0target\debug\ducker.exe" serve %*
+)

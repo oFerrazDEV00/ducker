@@ -2,5 +2,6 @@
 members = [
     "core",
     "cli",
+    "app/src-tauri",
 ]
 resolver = "2"

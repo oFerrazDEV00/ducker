@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ducker — Local-first P2P File Transfer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo-badge">
+          <span class="duck-emoji">🦆</span>
+        </div>
+        <div class="brand-text">
+          <h1>Ducker</h1>
+          <span class="protocol-badge">LocalSend v2.1 • P2P</span>
+        </div>
+      </div>
+
+      <div class="identity-card" id="myIdentityCard">
+        <div class="identity-info">
+          <div class="identity-name" id="myAlias">Carregando...</div>
+          <div class="identity-tags">
+            <span class="tag quac-tag">QUAC: <strong id="myQuac">--------</strong></span>
+            <span class="tag fp-tag" id="myFp" title="Fingerprint TLS">fp: --------</span>
+          </div>
+        </div>
+        <button class="icon-btn" id="btnEditAlias" title="Alterar apelido">✏️</button>
+        <button class="btn btn-secondary btn-sm" id="btnOpenDownloads" title="Abrir pasta de recebidos">
+          📁 Pasta
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="main-content">
+      <!-- Radar & Devices Section -->
+      <section class="section devices-section">
+        <div class="section-header">
+          <div>
+            <h2>Dispositivos na Rede</h2>
+            <p class="section-desc">Qualquer dispositivo com Ducker ou LocalSend na mesma rede Wi-Fi aparece aqui.</p>
+          </div>
+          <div class="section-actions">
+            <button class="btn btn-secondary btn-sm" id="btnScanNet" title="Buscar em toda a sub-rede /24">
+              🌐 Scan Sub-rede
+            </button>
+            <button class="btn btn-primary btn-sm" id="btnRefresh">
+              <span class="refresh-icon">🔄</span> Atualizar
+            </button>
+          </div>
+        </div>
+
+        <div class="devices-grid" id="devicesList">
+          <!-- Dispositivos renderizados via JS -->
+          <div class="empty-state">
+            <div class="radar-anim">
+              <div class="radar-ring r1"></div>
+              <div class="radar-ring r2"></div>
+              <div class="radar-ring r3"></div>
+              <div class="radar-core">🦆</div>
+            </div>
+            <p>Procurando dispositivos na rede local...</p>
+            <small>Abra o Ducker no outro computador ou o LocalSend no celular!</small>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Message / Send Drawer -->
+      <section class="section transfer-panel">
+        <div class="section-header">
+          <div>
+            <h2>Envio Rápido</h2>
+            <p class="section-desc">Envie um recado de texto ou arquivos para o dispositivo selecionado.</p>
+          </div>
+        </div>
+
+        <div class="send-box">
+          <div class="target-picker">
+            <label for="targetSelect">Destinatário:</label>
+            <select id="targetSelect">
+              <option value="">Selecione um dispositivo...</option>
+            </select>
+          </div>
+
+          <div class="tab-buttons">
+            <button class="tab-btn active" data-tab="tab-text">✉️ Mensagem</button>
+            <button class="tab-btn" data-tab="tab-files">📁 Arquivos</button>
+          </div>
+
+          <!-- Tab: Texto -->
+          <div class="tab-pane active" id="tab-text">
+            <textarea id="textPayload" placeholder="Digite uma mensagem ou link para enviar instantaneamente..."></textarea>
+            <div class="send-footer">
+              <span class="tip">Aparece instantaneamente na tela do destinatário</span>
+              <button class="btn btn-primary" id="btnSendText">Enviar Mensagem</button>
+            </div>
+          </div>
+
+          <!-- Tab: Arquivos -->
+          <div class="tab-pane" id="tab-files">
+            <div class="drop-zone" id="dropZone">
+              <div class="drop-icon">📤</div>
+              <div class="drop-title">Clique ou selecione arquivos para enviar</div>
+              <input type="file" id="fileInput" multiple style="display: none;">
+              <button class="btn btn-secondary btn-sm" id="btnChooseFiles">Escolher Arquivos</button>
+              <div class="selected-files-summary" id="selectedFilesSummary">Nenhum arquivo selecionado</div>
+            </div>
+            <div class="send-footer">
+              <span class="tip">Transferência direta P2P com criptografia TLS</span>
+              <button class="btn btn-primary" id="btnSendFiles" disabled>Enviar Arquivos</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity Stream -->
+        <div class="activity-section">
+          <h3>Atividade Recente</h3>
+          <div class="activity-list" id="activityList">
+            <div class="activity-empty">Nenhuma transferência recente</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Incoming Transfer Modal -->
+    <div class="modal-overlay" id="incomingModal" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <span class="modal-duck">🦆</span>
+          <div>
+            <h3>Transferência Recebida</h3>
+            <p id="incomingSender">De: Desconhecido</p>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="incoming-files-list" id="incomingFilesList"></div>
+          <div class="transfer-progress-box" id="incomingProgressBox" style="display: none;">
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" id="incomingProgressBar"></div>
+            </div>
+            <span class="progress-text" id="incomingProgressText">Recebendo: 0%</span>
+          </div>
+        </div>
+        <div class="modal-footer" id="modalActionButtons">
+          <button class="btn btn-danger" id="btnRejectTransfer">Recusar</button>
+          <button class="btn btn-success" id="btnAcceptTransfer">Aceitar Transferência 🦆</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>

@@ -1,66 +1,38 @@
-# Protocolo de Transferência do Ducker MVP
+# Protocolo de Transferência Ducker (Baseado em LocalSend v2)
 
-## Objetivo
+O Ducker adota integralmente o protocolo aberto **LocalSend v2.1**, garantindo interoperabilidade com qualquer aplicativo LocalSend oficial.
 
-Definir somente o necessário para descobrir dispositivos e transferir um arquivo pela rede.
+A especificação técnica detalhada completa está salva em [`ducker/LOCALSEND_PROTOCOL.md`](LOCALSEND_PROTOCOL.md).
 
-## Anúncio de descoberta
+## 1. Descoberta (Discovery)
 
-Cada dispositivo deve anunciar, no mínimo:
-
-- `quac_id`;
-- `device_name`;
-- endereço necessário para conexão;
-- porta de comunicação;
-- versão do protocolo.
-
-Exemplo conceitual:
-
+- **Multicast UDP:** Porta `53317`, endereço `224.0.0.167`.
+- **Payload de Anúncio (`MulticastDto`):**
 ```json
 {
-  "type": "ducker_discovery",
-  "quac_id": 12345678,
-  "device_name": "Celular do Fael",
-  "address": "192.168.1.20",
-  "port": 7878,
-  "protocol_version": 1
+  "alias": "Meu Computador",
+  "version": "2.1",
+  "deviceModel": "Windows",
+  "deviceType": "desktop",
+  "fingerprint": "6B86D8761853E206...",
+  "port": 53317,
+  "protocol": "https",
+  "download": false,
+  "announce": true,
+  "quacId": 46100135
 }
 ```
+- Ao receber um anúncio, outros dispositivos respondem enviando `POST /api/localsend/v2/register` de volta para a origem ou emitindo anúncio de retorno.
 
-## Fluxo de envio
+## 2. Negociação de Upload (Prepare Upload)
 
-1. remetente descobre os dispositivos;
-2. interface mostra nome e ID Quac;
-3. usuário escolhe o destinatário;
-4. remetente inicia a sessão;
-5. remetente informa o ID Quac de destino;
-6. receptor valida o ID Quac;
-7. se válido, a transferência continua;
-8. se inválido, a transferência é rejeitada;
-9. arquivo é transmitido;
-10. receptor confirma a conclusão.
+- Remetente envia metadados via `POST /api/localsend/v2/prepare-upload[?pin=...][&quac=...]` com lista de arquivos.
+- Se o destinatário for Ducker e a query `?quac=` for enviada, o receptor valida que `quac == own_quac_id`. Em caso de divergência, retorna `403 DESTINATION_ID_MISMATCH`.
+- O receptor responde `200 OK` com um `sessionId` e tokens individuais para cada arquivo, ou `204 No Content` para mensagens de texto exibidas imediatamente.
 
-## Validação do destino
+## 3. Transferência Binária (Upload)
 
-O receptor deve verificar:
-
-```text
-received_destination_quac_id == own_quac_id
-```
-
-Se não corresponder:
-
-```text
-TRANSFER_REJECTED
-reason: DESTINATION_ID_MISMATCH
-```
-
-Nenhum arquivo deve ser aceito ou salvo como recebido.
-
-Mensagem para o usuário:
-
-> Ocorreu um erro: a transferência foi interceptada porque o ID Quac de destino não corresponde a este dispositivo.
-
-## Observação
-
-Essa validação é requisito funcional do MVP. Ela não deve ser considerada, sozinha, um sistema completo de autenticação ou criptografia. Essas camadas serão aprofundadas posteriormente.
+- Para cada arquivo: `POST /api/localsend/v2/upload?sessionId=...&fileId=...&token=...`
+- Os bytes são transmitidos em streaming para um arquivo temporário.
+- Se fornecido checksum `sha256`, o hash é validado; em caso de divergência, o arquivo temporário é deletado e retorna `422`.
+- O arquivo é movido para o diretório de destino com sanitização estrita de caminho contra *path traversal*.

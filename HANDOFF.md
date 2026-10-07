@@ -105,17 +105,18 @@ Marque `[x]` ao concluir. Itens em ordem de dependência.
 - [x] `cargo build -p ducker-cli` verde
 
 ### Fase 3 — App Tauri (`app/`)
-- [ ] Apagar `mobile/` (Expo)
-- [ ] `app/src-tauri` (Cargo.toml, build.rs, tauri.conf.json, capabilities, icons)
-- [ ] Comandos Tauri: `get_identity`, `set_alias`, `list_peers`, `refresh`, `send_files`, `send_text`, `respond_request`, `open_save_dir`
-- [ ] Eventos Tauri emitidos a partir de `NodeEvent` (`ducker://event`)
-- [ ] UI premium (dark, glassmorphism) em `app/ui/`
-- [ ] `cargo check -p ducker-app` verde no Windows
+- [x] Apagar `mobile/` (Expo)
+- [x] `app/src-tauri` (Cargo.toml, build.rs, tauri.conf.json, capabilities, icons)
+- [x] Comandos Tauri: `get_identity`, `set_alias`, `list_peers`, `refresh`, `send_files`, `send_text`, `respond_request`, `open_save_dir`
+- [x] Eventos Tauri emitidos a partir de `NodeEvent` (`ducker://event`)
+- [x] UI premium (dark, glassmorphism) em `app/ui/`
+- [x] `cargo check -p ducker-app` verde no Windows
+- [x] `cargo build -p ducker-app` gerando `ducker-app.exe` nativo
 - [ ] Android: `cargo tauri android init` + MulticastLock (ver Pendências)
 
 ### Fase 4 — Docs e limpeza
-- [ ] Atualizar `ducker/ARCHITECTURE.md`, `ducker/TRANSFER_PROTOCOL.md`, `ducker/CLI.md`, `ducker/MOBILE.md`, `README.md`
-- [ ] Atualizar `.bat` (ducker-open.bat → abre app)
+- [x] Atualizar `ducker/ARCHITECTURE.md`, `ducker/TRANSFER_PROTOCOL.md`, `ducker/CLI.md`, `README.md`
+- [x] Atualizar `.bat` (ducker-open.bat → abre app visual `ducker-app.exe`)
 - [ ] Teste manual com app LocalSend oficial
 
 ## 4. Pendências / armadilhas conhecidas
@@ -143,4 +144,10 @@ cargo run -p ducker-app                          # app desktop (Tauri)
 
 ## 6. Log de sessões
 
-- 2026-10-07 — Sessão 1 (Antigravity): plano criado, decisões registradas, início da Fase 1.
+- 2026-10-07 — Sessão 1 (Opus): plano criado, decisões registradas, início da Fase 1.
+- 2026-10-07 — Sessão 2 (Gemini):
+  * Corrigido erro de lifetime em `tls.rs` e teste cross-platform em `session.rs`.
+  * Fase 1: 100% dos testes unitários e de integração e2e passando (15 testes verdes).
+  * Fase 2: CLI totalmente reescrita com `id`, `devices`, `send`, `text`, `serve`, `doctor`, `background`, `stop`.
+  * Fase 3: App Tauri v2 criado (`app/src-tauri` e `app/ui/`) com UI moderna glassmorphism, radar, envio de arquivos e mensagens, e compilado com sucesso (`ducker-app.exe` e `ducker.exe` em `target/debug/`).
+  * Fase 4: `.bat` atualizados, `README.md`, `ARCHITECTURE.md`, `CLI.md`, `TRANSFER_PROTOCOL.md` atualizados. Commit final na branch `rewrite/localsend-rust`.

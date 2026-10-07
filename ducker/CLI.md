@@ -1,67 +1,39 @@
-# Ducker CLI - MVP
+# Ducker CLI
 
-## Primeira execução
+Manual de referência dos comandos do Ducker CLI (protocolo LocalSend v2).
 
-```bash
-ducker
-```
+## Comandos Disponíveis
 
-Caso o dispositivo ainda não esteja configurado:
+### `ducker id`
+Exibe o apelido do nó, o ID Quac (8 dígitos) e a impressão digital TLS (fingerprint SHA-256).
 
-```text
-Bem-vindo ao Ducker!
+### `ducker devices [--scan]`
+Descobre dispositivos ativos na mesma rede local ouvindo anúncios UDP multicast.
+- `--scan`: Realiza varredura completa na sub-rede /24 caso o multicast esteja bloqueado.
 
-Nome do dispositivo: Notebook do Fael
+### `ducker send <caminhos...> [--to <destinatário>] [--pin <pin>]`
+Envia um ou mais arquivos ou diretórios inteiros.
+- Se `--to` for omitido, abre um menu interativo com os dispositivos detectados.
+- Aceita como destino: Apelido, ID Quac, prefixo do fingerprint, IP ou IP:Porta.
 
-Seu ID Quac: 84726193
-```
+### `ducker text <mensagem> [--to <destinatário>]`
+Envia uma mensagem de texto ou link direto que aparece instantaneamente no dispositivo remoto.
 
-## Listar dispositivos
+### `ducker serve` (ou `ducker receive`)
+Inicia o modo de escuta para receber arquivos.
+- `-y, --yes`: Aceita todas as transferências automaticamente.
+- `--port <porta>`: Porta TCP personalizada (padrão: 53317).
+- `--save-dir <pasta>`: Diretório personalizado para salvar arquivos recebidos.
+- `--pin <pin>`: Exige PIN de quem for enviar.
 
-```bash
-ducker devices
-```
+### `ducker background`
+Inicia o serviço em segundo plano no Windows (sem janela de terminal) com auto-aceite ativado.
 
-Exemplo:
+### `ducker stop`
+Encerra processos do Ducker rodando em segundo plano.
 
-```text
-Dispositivos encontrados:
+### `ducker autostart [enable|disable]`
+Configura inicialização automática silenciosa ao ligar o computador Windows.
 
-1. Celular do Fael [12345678]
-2. Notebook do Fael [84726193]
-```
-
-## Enviar arquivo
-
-```bash
-ducker send ./foto.png
-```
-
-O CLI apresenta os destinatários descobertos e solicita uma escolha.
-
-## Progresso
-
-```text
-Enviando foto.png
-[████████████████░░░░] 82%
-```
-
-## Identidade
-
-```bash
-ducker id
-```
-
-## Diagnóstico
-
-```bash
-ducker doctor
-```
-
-## Comandos mínimos
-
-- `ducker`
-- `ducker devices`
-- `ducker send <arquivo>`
-- `ducker id`
-- `ducker doctor`
+### `ducker doctor`
+Executa diagnóstico de interfaces locais IPv4, portas 53317 (TCP e UDP), certificados e permissões.
