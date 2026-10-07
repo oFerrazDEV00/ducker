@@ -36,7 +36,7 @@ impl PeerClient {
         tls::install_crypto_provider();
         let mut builder = reqwest::Client::builder()
             .use_preconfigured_tls(tls::client_config(expected_fingerprint))
-            .connect_timeout(Duration::from_secs(5))
+            .connect_timeout(Duration::from_secs(10))
             .no_proxy();
         if let Some(t) = timeout {
             builder = builder.timeout(t);

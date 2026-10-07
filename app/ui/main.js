@@ -70,6 +70,7 @@ function renderDevices(peers) {
   targetSelectEl.innerHTML = '<option value="">Selecione um dispositivo...</option>';
 
   if (peers.length === 0) {
+    selectedPeerKey = null;
     devicesListEl.innerHTML = `
       <div class="empty-state">
         <div class="radar-anim">
@@ -85,10 +86,26 @@ function renderDevices(peers) {
     return;
   }
 
+  // Mantém seleção anterior se o peer ainda estiver na lista
+  const stillExists = selectedPeerKey && peers.some(p => {
+    const k = p.key || p.info.fingerprint || `${p.ip}:${p.port}`;
+    return k.toLowerCase() === selectedPeerKey.toLowerCase();
+  });
+  if (!stillExists) {
+    if (peers.length === 1) {
+      selectedPeerKey = peers[0].key || peers[0].info.fingerprint || `${peers[0].ip}:${peers[0].port}`;
+    } else {
+      selectedPeerKey = null;
+    }
+  }
+
   devicesListEl.innerHTML = '';
   peers.forEach(peer => {
+    const peerKey = peer.key || peer.info.fingerprint || `${peer.ip}:${peer.port}`;
+    const isSelected = selectedPeerKey && (selectedPeerKey === peerKey || selectedPeerKey.toLowerCase() === peerKey.toLowerCase());
+
     const card = document.createElement('div');
-    card.className = `device-card ${selectedPeerKey === peer.info.fingerprint ? 'selected' : ''}`;
+    card.className = `device-card ${isSelected ? 'selected' : ''}`;
 
     const isDucker = peer.info.quacId !== null && peer.info.quacId !== undefined;
     const typeIcon = peer.info.deviceType === 'mobile' ? '📱' : '💻';
@@ -104,7 +121,7 @@ function renderDevices(peers) {
           <div class="device-sub">${peer.protocol}://${peer.ip}:${peer.port}</div>
         </div>
       </div>
-      <button class="btn btn-secondary btn-sm btn-select-peer">Selecionar</button>
+      <button class="btn btn-secondary btn-sm btn-select-peer">${isSelected ? '✓ Selecionado' : 'Selecionar'}</button>
     `;
 
     card.addEventListener('click', () => selectPeer(peer));
@@ -112,17 +129,15 @@ function renderDevices(peers) {
 
     // Option no select
     const opt = document.createElement('option');
-    opt.value = peer.info.fingerprint || `${peer.ip}:${peer.port}`;
+    opt.value = peerKey;
     opt.textContent = `${peer.info.alias} (${peer.ip})`;
-    if (selectedPeerKey === opt.value) opt.selected = true;
+    if (isSelected) opt.selected = true;
     targetSelectEl.appendChild(opt);
   });
 }
 
 function selectPeer(peer) {
-  selectedPeerKey = peer.info.fingerprint || `${peer.ip}:${peer.port}`;
-  targetSelectEl.value = selectedPeerKey;
-  document.querySelectorAll('.device-card').forEach(c => c.classList.remove('selected'));
+  selectedPeerKey = peer.key || peer.info.fingerprint || `${peer.ip}:${peer.port}`;
   renderDevices(currentPeers);
 }
 
@@ -265,9 +280,10 @@ btnSendFiles.addEventListener('click', async () => {
     pendingPaths = [];
     selectedFilesSummary.textContent = 'Nenhum arquivo selecionado';
   } catch (e) {
+    console.error('Falha no envio de arquivos:', e);
     alert(`Erro no envio: ${e}`);
   } finally {
-    btnSendFiles.disabled = true;
+    btnSendFiles.disabled = pendingPaths.length === 0;
     btnSendFiles.textContent = 'Enviar Arquivos';
   }
 });
@@ -319,7 +335,7 @@ if (hasTauri) {
     const ev = e.payload;
     console.log('[Ducker Core Event]', ev);
     if (ev.type === 'peerDiscovered') {
-      refreshPeers();
+      invoke('list_peers').then(renderDevices).catch(console.error);
     } else if (ev.type === 'incomingRequest') {
       if (!ev.autoAccepted) {
         showIncomingModal(ev.sessionId, ev.sender, ev.files);

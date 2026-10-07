@@ -42,6 +42,7 @@ pub(crate) async fn start(inner: Arc<NodeInner>) -> Result<()> {
     sock.set_reuse_port(true)?;
     sock.bind(&SocketAddr::from((Ipv4Addr::UNSPECIFIED, mport)).into())?;
     sock.set_multicast_loop_v4(true)?;
+    let _ = sock.set_broadcast(true);
 
     let mut joined = 0;
     for ip in local_ipv4s() {
@@ -56,18 +57,18 @@ pub(crate) async fn start(inner: Arc<NodeInner>) -> Result<()> {
     sock.set_nonblocking(true)?;
     let udp = Arc::new(UdpSocket::from_std(sock.into())?);
     let _ = inner.udp.set(udp.clone());
-    info!("Descoberta multicast ativa em {group}:{mport} ({joined} interface(s))");
+    info!("Descoberta multicast/broadcast ativa em {group}:{mport} ({joined} interface(s))");
 
     let listen = tokio::spawn(listen_loop(inner.clone(), udp));
     let inner2 = inner.clone();
     let announcer = tokio::spawn(async move {
         // Mesmo padrão do LocalSend: rajada inicial, depois anúncios periódicos.
-        for delay in [100u64, 500, 2000] {
+        for delay in [100u64, 500, 1500, 3000] {
             tokio::time::sleep(Duration::from_millis(delay)).await;
             announce(&inner2, true).await;
         }
         loop {
-            tokio::time::sleep(Duration::from_secs(30)).await;
+            tokio::time::sleep(Duration::from_secs(15)).await;
             announce(&inner2, true).await;
         }
     });
@@ -75,21 +76,27 @@ pub(crate) async fn start(inner: Arc<NodeInner>) -> Result<()> {
     Ok(())
 }
 
-/// Envia nosso `MulticastDto` em todas as interfaces.
+/// Envia nosso `MulticastDto` em todas as interfaces via multicast e broadcast local.
 pub(crate) async fn announce(inner: &Arc<NodeInner>, is_announce: bool) {
     let Some(udp) = inner.udp.get() else { return };
     let dto = MulticastDto::new(inner.device_info(), is_announce);
     let Ok(bytes) = serde_json::to_vec(&dto) else { return };
-    let target = SocketAddr::from((inner.config.multicast_addr, inner.config.multicast_port));
+    let mcast_target = SocketAddr::from((inner.config.multicast_addr, inner.config.multicast_port));
+    let bcast_target = SocketAddr::from((Ipv4Addr::BROADCAST, inner.config.multicast_port));
     let ifaces = local_ipv4s();
     if ifaces.is_empty() {
-        let _ = udp.send_to(&bytes, target).await;
+        let _ = udp.send_to(&bytes, mcast_target).await;
+        let _ = udp.send_to(&bytes, bcast_target).await;
         return;
     }
     for ip in ifaces {
         let _ = SockRef::from(udp.as_ref()).set_multicast_if_v4(&ip);
-        if let Err(e) = udp.send_to(&bytes, target).await {
-            debug!("Falha ao anunciar pela interface {ip}: {e}");
+        if let Err(e) = udp.send_to(&bytes, mcast_target).await {
+            debug!("Falha ao anunciar multicast pela interface {ip}: {e}");
+        }
+        // Broadcast como garantia caso o roteador Wi-Fi filtre multicast IGMP entre clientes
+        if let Err(e) = udp.send_to(&bytes, bcast_target).await {
+            debug!("Falha ao enviar broadcast pela interface {ip}: {e}");
         }
     }
 }
@@ -116,7 +123,7 @@ async fn listen_loop(inner: Arc<NodeInner>, udp: Arc<UdpSocket>) {
     }
 }
 
-/// Responde a um anúncio: primeiro via HTTP `/register`, se falhar via UDP.
+/// Responde a um anúncio: primeiro via HTTP `/register`, se falhar via UDP (unicast direto + multicast).
 async fn respond_to_announce(inner: Arc<NodeInner>, peer: Peer) {
     let me = inner.device_info();
     let result = match PeerClient::new(peer.protocol, peer.ip, peer.port, None, Some(Duration::from_secs(3))) {
@@ -128,7 +135,14 @@ async fn respond_to_announce(inner: Arc<NodeInner>, peer: Peer) {
             inner.add_peer_from_info(info, peer.ip);
         }
         Err(e) => {
-            debug!("register em {} falhou ({e}); respondendo via UDP", peer.ip);
+            debug!("register em {} falhou ({e}); respondendo via UDP unicast e broadcast", peer.ip);
+            if let Some(udp) = inner.udp.get() {
+                let dto = MulticastDto::new(inner.device_info(), false);
+                if let Ok(bytes) = serde_json::to_vec(&dto) {
+                    let unicast_target = SocketAddr::new(peer.ip, peer.port);
+                    let _ = udp.send_to(&bytes, unicast_target).await;
+                }
+            }
             announce(&inner, false).await;
         }
     }

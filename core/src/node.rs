@@ -89,6 +89,7 @@ pub fn default_save_dir() -> PathBuf {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Peer {
+    pub key: String,
     pub info: DeviceInfo,
     pub ip: IpAddr,
     pub port: u16,
@@ -99,12 +100,8 @@ pub struct Peer {
 
 impl Peer {
     /// Chave única: fingerprint (se houver) ou ip:porta.
-    pub fn key(&self) -> String {
-        if self.info.fingerprint.is_empty() {
-            format!("{}:{}", self.ip, self.port)
-        } else {
-            self.info.fingerprint.to_uppercase()
-        }
+    pub fn key(&self) -> &str {
+        &self.key
     }
 
     pub fn is_ducker(&self) -> bool {
@@ -115,6 +112,14 @@ impl Peer {
         // Pinning estrito só entre nós Ducker (mesmo algoritmo de fingerprint garantido).
         let pin = (self.protocol == Protocol::Https && self.is_ducker()).then(|| self.info.fingerprint.clone());
         PeerClient::new(self.protocol, self.ip, self.port, pin, timeout)
+    }
+
+    fn fallback_client(&self, timeout: Option<Duration>) -> Option<PeerClient> {
+        let alt = match self.protocol {
+            Protocol::Https => Protocol::Http,
+            Protocol::Http => Protocol::Https,
+        };
+        PeerClient::new(alt, self.ip, self.port, None, timeout).ok()
     }
 }
 
@@ -195,14 +200,19 @@ impl NodeInner {
         if !info.fingerprint.is_empty() && info.fingerprint.eq_ignore_ascii_case(&own_fp) {
             return None;
         }
+        let key = if info.fingerprint.is_empty() {
+            format!("{}:{}", ip, info.port.unwrap_or(DEFAULT_PORT))
+        } else {
+            info.fingerprint.to_uppercase()
+        };
         let peer = Peer {
+            key: key.clone(),
             port: info.port.unwrap_or(DEFAULT_PORT),
             protocol: info.protocol.unwrap_or_default(),
             ip,
             info,
             last_seen_ms: now_ms(),
         };
-        let key = peer.key();
         let is_new = {
             let mut peers = self.peers.write().unwrap();
             let changed = peers.get(&key).map(|p| p.info != peer.info || p.ip != peer.ip).unwrap_or(true);
@@ -323,9 +333,14 @@ impl Node {
         discovery::announce(&self.inner, true).await;
     }
 
-    /// Limpa a lista de peers e reanuncia.
+    /// Reanuncia na rede e descarta peers que não são vistos há mais de 60 segundos.
+    /// Não limpa peers ativos para evitar flickering e perda de seleção na UI.
     pub async fn refresh(&self) {
-        self.inner.peers.write().unwrap().clear();
+        let cutoff = now_ms().saturating_sub(60_000);
+        {
+            let mut peers = self.inner.peers.write().unwrap();
+            peers.retain(|_, p| p.last_seen_ms >= cutoff);
+        }
         self.announce().await;
     }
 
@@ -354,7 +369,7 @@ impl Node {
         Err(last_err)
     }
 
-    /// Encontra um peer por: ID Quac, apelido (exato ou parcial), prefixo do fingerprint, ou IP[:porta].
+    /// Encontra um peer por: ID Quac, chave única, apelido (exato ou parcial), prefixo do fingerprint, ou IP[:porta].
     pub fn find_peer(&self, query: &str) -> Option<Peer> {
         let q = query.trim();
         let ql = q.to_lowercase();
@@ -363,6 +378,9 @@ impl Node {
             if let Some(p) = peers.iter().find(|p| p.info.quac_id == Some(quac)) {
                 return Some(p.clone());
             }
+        }
+        if let Some(p) = peers.iter().find(|p| p.key.eq_ignore_ascii_case(q)) {
+            return Some(p.clone());
         }
         if let Some(p) = peers.iter().find(|p| p.info.alias.to_lowercase() == ql) {
             return Some(p.clone());
@@ -413,7 +431,25 @@ impl Node {
         // prepare-upload pode demorar (o usuário do outro lado precisa aceitar).
         let client = peer.client(None)?;
         let req = PrepareUploadRequest { info: self.inner.device_info(), files };
-        let Some(resp) = client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await? else {
+        let (active_client, resp) = match client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await {
+            Ok(r) => (client, r),
+            Err(e) => {
+                // Tenta fallback com o protocolo alternativo se falhar por conexão (ex: HTTPS -> HTTP ou vice-versa)
+                if matches!(e, DuckerError::ConnectionFailed(_)) {
+                    if let Some(alt_client) = peer.fallback_client(None) {
+                        match alt_client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await {
+                            Ok(r) => (alt_client, r),
+                            Err(_) => return Err(e),
+                        }
+                    } else {
+                        return Err(e);
+                    }
+                } else {
+                    return Err(e);
+                }
+            }
+        };
+        let Some(resp) = resp else {
             return Ok(());
         };
 
@@ -432,8 +468,8 @@ impl Node {
                     total,
                 })
             });
-            if let Err(e) = client.upload_file(&resp.session_id, file_id, token, path, size, progress).await {
-                let _ = client.cancel(&resp.session_id).await;
+            if let Err(e) = active_client.upload_file(&resp.session_id, file_id, token, path, size, progress).await {
+                let _ = active_client.cancel(&resp.session_id).await;
                 return Err(e);
             }
             done += size;
@@ -455,10 +491,27 @@ impl Node {
         };
         let client = peer.client(None)?;
         let req = PrepareUploadRequest { info: self.inner.device_info(), files: HashMap::from([(id.clone(), dto)]) };
-        if let Some(resp) = client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await? {
+        let (active_client, resp) = match client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await {
+            Ok(r) => (client, r),
+            Err(e) => {
+                if matches!(e, DuckerError::ConnectionFailed(_)) {
+                    if let Some(alt_client) = peer.fallback_client(None) {
+                        match alt_client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await {
+                            Ok(r) => (alt_client, r),
+                            Err(_) => return Err(e),
+                        }
+                    } else {
+                        return Err(e);
+                    }
+                } else {
+                    return Err(e);
+                }
+            }
+        };
+        if let Some(resp) = resp {
             // Receptor preferiu receber como arquivo.
             if let Some(token) = resp.files.get(&id) {
-                client.upload_bytes(&resp.session_id, &id, token, text.as_bytes().to_vec()).await?;
+                active_client.upload_bytes(&resp.session_id, &id, token, text.as_bytes().to_vec()).await?;
             }
         }
         Ok(())

@@ -51,8 +51,7 @@ async fn list_peers(state: State<'_, Arc<AppState>>) -> Result<Vec<Peer>, String
 #[tauri::command]
 async fn refresh(state: State<'_, Arc<AppState>>) -> Result<Vec<Peer>, String> {
     state.node.refresh().await;
-    // Pequena espera para coleta de pacotes de anúncio
-    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     Ok(state.node.peers())
 }
 
@@ -91,10 +90,17 @@ async fn send_files(
 ) -> Result<(), String> {
     let peer = state
         .node
-        .peers()
-        .into_iter()
-        .find(|p| p.key() == payload.peer_key || p.info.alias == payload.peer_key)
-        .ok_or_else(|| "Destinatário não encontrado".to_string())?;
+        .find_peer(&payload.peer_key)
+        .or_else(|| {
+            state.node.peers().into_iter().find(|p| {
+                p.key().eq_ignore_ascii_case(&payload.peer_key)
+                    || p.info.fingerprint.eq_ignore_ascii_case(&payload.peer_key)
+                    || p.info.alias.eq_ignore_ascii_case(&payload.peer_key)
+                    || format!("{}:{}", p.ip, p.port) == payload.peer_key
+                    || p.ip.to_string() == payload.peer_key
+            })
+        })
+        .ok_or_else(|| format!("Destinatário '{}' não encontrado na rede", payload.peer_key))?;
 
     let path_bufs: Vec<PathBuf> = payload.paths.into_iter().map(PathBuf::from).collect();
     let app_clone = app.clone();
@@ -121,10 +127,17 @@ async fn send_text(
 ) -> Result<(), String> {
     let peer = state
         .node
-        .peers()
-        .into_iter()
-        .find(|p| p.key() == payload.peer_key || p.info.alias == payload.peer_key)
-        .ok_or_else(|| "Destinatário não encontrado".to_string())?;
+        .find_peer(&payload.peer_key)
+        .or_else(|| {
+            state.node.peers().into_iter().find(|p| {
+                p.key().eq_ignore_ascii_case(&payload.peer_key)
+                    || p.info.fingerprint.eq_ignore_ascii_case(&payload.peer_key)
+                    || p.info.alias.eq_ignore_ascii_case(&payload.peer_key)
+                    || format!("{}:{}", p.ip, p.port) == payload.peer_key
+                    || p.ip.to_string() == payload.peer_key
+            })
+        })
+        .ok_or_else(|| format!("Destinatário '{}' não encontrado na rede", payload.peer_key))?;
 
     state
         .node
