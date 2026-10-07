@@ -21,6 +21,7 @@ serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 dirs = "5.0"
+rfd = "0.17.2"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

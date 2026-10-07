@@ -205,11 +205,40 @@ btnSendText.addEventListener('click', async () => {
 });
 
 // Seleção de Arquivos
-btnChooseFiles.addEventListener('click', () => fileInput.click());
+let pendingPaths = [];
+
+async function handleFilePicker() {
+  if (hasTauri) {
+    try {
+      const selected = await invoke('pick_files');
+      if (selected && selected.length > 0) {
+        pendingPaths = selected;
+        const fileNames = selected.map(p => p.split(/[\\/]/).pop());
+        selectedFilesSummary.textContent = `${selected.length} arquivo(s) selecionado(s): ${fileNames.join(', ')}`;
+        btnSendFiles.disabled = false;
+      }
+    } catch (e) {
+      console.error('Erro ao abrir seletor:', e);
+    }
+  } else {
+    fileInput.click();
+  }
+}
+
+btnChooseFiles.addEventListener('click', (e) => {
+  e.stopPropagation();
+  handleFilePicker();
+});
+
+dropZone.addEventListener('click', (e) => {
+  if (e.target !== btnChooseFiles) {
+    handleFilePicker();
+  }
+});
 
 fileInput.addEventListener('change', (e) => {
   const files = Array.from(e.target.files);
-  pendingFiles = files;
+  pendingPaths = files.map(f => f.path || f.name);
   if (files.length > 0) {
     selectedFilesSummary.textContent = `${files.length} arquivo(s) selecionado(s): ${files.map(f => f.name).join(', ')}`;
     btnSendFiles.disabled = false;
@@ -224,19 +253,16 @@ btnSendFiles.addEventListener('click', async () => {
     alert('Por favor, selecione um dispositivo de destino.');
     return;
   }
-  if (pendingFiles.length === 0) return;
+  if (pendingPaths.length === 0) return;
 
   btnSendFiles.disabled = true;
   btnSendFiles.textContent = 'Transferindo...';
-  // Nota: no Tauri desktop nativo com input de arquivos podemos coletar os paths
-  // Se forem File web, enviamos os paths via API
-  const paths = pendingFiles.map(f => f.path || f.name);
   try {
     await invoke('send_files', {
-      payload: { peer_key: selectedPeerKey, paths }
+      payload: { peer_key: selectedPeerKey, paths: pendingPaths }
     });
-    addActivity(`Envio de ${paths.length} arquivo(s) concluído com sucesso!`);
-    pendingFiles = [];
+    addActivity(`Envio de ${pendingPaths.length} arquivo(s) concluído com sucesso!`);
+    pendingPaths = [];
     selectedFilesSummary.textContent = 'Nenhum arquivo selecionado';
   } catch (e) {
     alert(`Erro no envio: ${e}`);

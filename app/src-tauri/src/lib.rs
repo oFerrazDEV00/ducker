@@ -61,6 +61,22 @@ async fn scan_network(state: State<'_, Arc<AppState>>) -> Result<usize, String> 
     Ok(state.node.scan_subnet().await)
 }
 
+#[tauri::command]
+async fn pick_files() -> Result<Vec<String>, String> {
+    let files = rfd::AsyncFileDialog::new()
+        .set_title("Ducker — Selecione arquivos para enviar")
+        .pick_files()
+        .await;
+
+    match files {
+        Some(handles) => Ok(handles
+            .into_iter()
+            .map(|h| h.path().to_string_lossy().to_string())
+            .collect()),
+        None => Ok(vec![]),
+    }
+}
+
 #[derive(Deserialize)]
 pub struct SendFilesPayload {
     pub peer_key: String,
@@ -198,6 +214,7 @@ pub fn run() {
             list_peers,
             refresh,
             scan_network,
+            pick_files,
             send_files,
             send_text,
             respond_request,
