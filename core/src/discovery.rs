@@ -94,10 +94,14 @@ pub(crate) async fn announce(inner: &Arc<NodeInner>, is_announce: bool) {
         if let Err(e) = udp.send_to(&bytes, mcast_target).await {
             debug!("Falha ao anunciar multicast pela interface {ip}: {e}");
         }
-        // Broadcast como garantia caso o roteador Wi-Fi filtre multicast IGMP entre clientes
+        // Broadcast global como garantia
         if let Err(e) = udp.send_to(&bytes, bcast_target).await {
-            debug!("Falha ao enviar broadcast pela interface {ip}: {e}");
+            debug!("Falha ao enviar broadcast global pela interface {ip}: {e}");
         }
+        // Broadcast dirigido da sub-rede /24 (crucial para Android e redes Wi-Fi com isolamento/filtro IGMP)
+        let [a, b, c, _] = ip.octets();
+        let subnet_bcast = SocketAddr::from((Ipv4Addr::new(a, b, c, 255), inner.config.multicast_port));
+        let _ = udp.send_to(&bytes, subnet_bcast).await;
     }
 }
 
@@ -123,15 +127,26 @@ async fn listen_loop(inner: Arc<NodeInner>, udp: Arc<UdpSocket>) {
     }
 }
 
-/// Responde a um anúncio: primeiro via HTTP `/register`, se falhar via UDP (unicast direto + multicast).
+/// Responde a um anúncio: primeiro via HTTP/HTTPS `/register`, se falhar via UDP (unicast direto + multicast).
 async fn respond_to_announce(inner: Arc<NodeInner>, peer: Peer) {
     let me = inner.device_info();
     let id = inner.identity();
     let cert_key = (id.cert_pem.as_str(), id.key_pem.as_str());
-    let result = match PeerClient::new(peer.protocol, peer.ip, peer.port, Some(cert_key), None, Some(Duration::from_secs(3))) {
+    let mut result = match PeerClient::new(peer.protocol, peer.ip, peer.port, Some(cert_key), None, Some(Duration::from_secs(3))) {
         Ok(client) => client.register(&me).await,
         Err(e) => Err(e),
     };
+
+    // Fallback: se falhar pelo protocolo padrão (ex: HTTPS), tenta pelo protocolo alternativo (HTTP)
+    if result.is_err() {
+        let alt = other(peer.protocol);
+        if let Ok(alt_client) = PeerClient::new(alt, peer.ip, peer.port, Some(cert_key), None, Some(Duration::from_secs(3))) {
+            if let Ok(info) = alt_client.register(&me).await {
+                result = Ok(info);
+            }
+        }
+    }
+
     match result {
         Ok(info) => {
             inner.add_peer_from_info(info, peer.ip);

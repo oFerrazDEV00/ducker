@@ -131,8 +131,16 @@ document.getElementById('btnProfile')?.addEventListener('click', () => navigateT
 document.getElementById('btnMobileSettings')?.addEventListener('click', () => navigateToPage('settings'));
 
 // Mobile FAB button
-document.getElementById('mobileFabSend')?.addEventListener('click', () => {
+document.getElementById('mobileFabSend')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
   navigateToPage('home');
+  const btn = document.getElementById('btnSelectFiles');
+  if (btn) {
+    btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    btn.classList.add('pulse-focus');
+    setTimeout(() => btn.classList.remove('pulse-focus'), 1200);
+  }
   handleFilePicker();
 });
 
@@ -348,13 +356,27 @@ document.getElementById('linkScanNet')?.addEventListener('click', scanSubnet);
 document.getElementById('btnDevicesScanSubnet')?.addEventListener('click', scanSubnet);
 
 // ==================== FILE SELECTION & TRANSFER ====================
+function cleanDisplayName(pathOrName) {
+  const raw = pathOrName.split(/[\\/]/).pop() || '';
+  const match = raw.match(/^\d+_[a-z0-9]+_(.+)$/i);
+  return match ? match[1] : raw;
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
 function updateSendButtonState() {
   const hasFiles = pendingFiles.length > 0;
   const hasTarget = Boolean(selectedPeerKey);
   btnExecuteSend.disabled = !(hasFiles && hasTarget);
 
   if (hasFiles) {
-    const names = pendingFiles.map(p => p.split(/[\\/]/).pop());
+    const names = pendingFiles.map(p => cleanDisplayName(p));
     filesPreview.textContent = `${pendingFiles.length} arquivo(s): ${names.join(', ')}`;
     filesPreview.style.color = 'var(--accent-yellow)';
   } else {
@@ -363,34 +385,40 @@ function updateSendButtonState() {
   }
 }
 
+let isPickerActive = false;
+
 async function handleFilePicker() {
-  if (hasTauri) {
-    try {
+  if (isPickerActive) return;
+  isPickerActive = true;
+
+  try {
+    if (hasTauri) {
+      // Desktop: rfd nativo
       const selected = await invoke('pick_files');
       if (selected && selected.length > 0) {
         pendingFiles = selected;
         updateSendButtonState();
         return;
       }
-    } catch (e) {
-      console.warn('Fallback to file input:', e);
     }
+  } catch (e) {
+    console.warn('Fallback para input HTML5:', e);
+  } finally {
+    setTimeout(() => { isPickerActive = false; }, 800);
   }
+
+  // Fallback para input HTML5 (indispensável no Android e iOS)
   nativeFileInput.click();
 }
 
+// Botão explícito de seleção de arquivos (ÚNICO gatilho de clique para evitar popup acidental)
 btnSelectFiles.addEventListener('click', (e) => {
+  e.preventDefault();
   e.stopPropagation();
   handleFilePicker();
 });
 
-fileDropZone.addEventListener('click', (e) => {
-  if (e.target !== btnSelectFiles) {
-    handleFilePicker();
-  }
-});
-
-// Drag and drop events
+// Drag and drop events (desktop)
 ['dragenter', 'dragover'].forEach(eventName => {
   fileDropZone.addEventListener(eventName, (e) => {
     e.preventDefault();
@@ -399,7 +427,7 @@ fileDropZone.addEventListener('click', (e) => {
   });
 });
 
-['dragleave', 'drop'].forEach(eventName => {
+['dragleave'].forEach(eventName => {
   fileDropZone.addEventListener(eventName, (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -407,13 +435,86 @@ fileDropZone.addEventListener('click', (e) => {
   });
 });
 
-nativeFileInput.addEventListener('change', (e) => {
-  const files = Array.from(e.target.files);
-  if (files.length > 0) {
-    pendingFiles = files.map(f => f.path || f.name);
-    updateSendButtonState();
+fileDropZone.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  fileDropZone.classList.remove('dragover');
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    await processSelectedFiles(Array.from(e.dataTransfer.files));
   }
 });
+
+nativeFileInput.addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  if (files.length > 0) {
+    await processSelectedFiles(files);
+  }
+  nativeFileInput.value = '';
+});
+
+// Processa arquivos selecionados (suporte nativo e staging em chunks no Android/iOS)
+async function processSelectedFiles(files) {
+  if (!files || files.length === 0) return;
+
+  btnExecuteSend.disabled = true;
+  filesPreview.textContent = `Preparando ${files.length} arquivo(s)...`;
+  filesPreview.style.color = 'var(--accent-yellow)';
+
+  const stagedPaths = [];
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      // Se a plataforma expõe caminho absoluto do sistema operacional (Desktop)
+      if (file.path && typeof file.path === 'string' && file.path.length > 0) {
+        stagedPaths.push(file.path);
+        continue;
+      }
+
+      // No Android e iOS WebViews: transferimos os bytes em blocos para o sandbox do app
+      const stageId = Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      const CHUNK_SIZE = 1024 * 1024; // 1 MB por bloco
+      let offset = 0;
+      let isFirst = true;
+      let finalPath = '';
+
+      while (offset < file.size) {
+        const slice = file.slice(offset, offset + CHUNK_SIZE);
+        const buffer = await slice.arrayBuffer();
+        const data = Array.from(new Uint8Array(buffer));
+
+        finalPath = await invoke('stage_file_chunk', {
+          payload: {
+            stage_id: stageId,
+            file_name: file.name,
+            data,
+            is_first: isFirst
+          }
+        });
+
+        offset += CHUNK_SIZE;
+        isFirst = false;
+
+        if (file.size > 2 * 1024 * 1024) {
+          const pct = Math.min(100, Math.round((offset / file.size) * 100));
+          filesPreview.textContent = `Carregando [${i + 1}/${files.length}] ${file.name}: ${pct}%`;
+        }
+      }
+
+      if (finalPath) {
+        stagedPaths.push(finalPath);
+      }
+    }
+
+    pendingFiles = stagedPaths;
+    updateSendButtonState();
+  } catch (err) {
+    console.error('Erro ao preparar arquivos:', err);
+    alert('Erro ao carregar arquivos selecionados: ' + err);
+    pendingFiles = [];
+    updateSendButtonState();
+  }
+}
 
 // Envio de Arquivos
 btnExecuteSend.addEventListener('click', async () => {
@@ -436,21 +537,23 @@ btnExecuteSend.addEventListener('click', async () => {
       }
     });
 
-    // Registra no histórico
+    // Registra no histórico com nomes limpos
     pendingFiles.forEach(file => {
-      const name = file.split(/[\\/]/).pop();
+      const name = cleanDisplayName(file);
       addTransferHistory({
         name,
         type: getFileCategory(name),
         direction: 'sent',
         peerName: targetName,
-        size: '1.5 MB',
+        size: 'Concluído',
         date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       });
     });
 
     pendingFiles = [];
     updateSendButtonState();
+    // Limpa os arquivos temporários de staging no dispositivo
+    invoke('clear_staged_files').catch(console.warn);
     alert('Envio concluído com sucesso! 🦆');
   } catch (e) {
     console.error('Falha no envio:', e);
@@ -470,14 +573,24 @@ document.getElementById('btnSendQuickMsg')?.addEventListener('click', async () =
     alert('Selecione um dispositivo destinatário primeiro!');
     return;
   }
+  const btn = document.getElementById('btnSendQuickMsg');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+  }
   try {
     await invoke('send_text', {
       payload: { peer_key: selectedPeerKey, text }
     });
     txtInput.value = '';
-    alert('Mensagem enviada com sucesso!');
+    alert('Mensagem enviada com sucesso! 🦆');
   } catch (e) {
     alert(`Erro ao enviar mensagem: ${e}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Enviar Texto';
+    }
   }
 });
 
@@ -673,3 +786,11 @@ loadIdentity();
 loadHistory();
 refreshPeers();
 setInterval(refreshPeers, 8000);
+
+// Auto-scan rápido após 2.5s se nenhum peer responder via multicast (essencial para redes Wi-Fi móveis)
+setTimeout(() => {
+  if (currentPeers.length === 0) {
+    console.log('[Ducker Discovery] Executando busca ativa na sub-rede...');
+    scanSubnet();
+  }
+}, 2500);

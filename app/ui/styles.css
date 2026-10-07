@@ -1377,3 +1377,14 @@ body {
     line-height: 1;
   }
 }
+
+@keyframes pulseFocusGlow {
+  0% { box-shadow: 0 0 0 0 var(--accent-yellow-glow); transform: scale(1); }
+  50% { box-shadow: 0 0 0 10px var(--accent-yellow-glow); transform: scale(1.03); }
+  100% { box-shadow: 0 0 0 0 var(--accent-yellow-glow); transform: scale(1); }
+}
+
+.pulse-focus {
+  animation: pulseFocusGlow 0.8s ease-in-out 2;
+  outline: 2px solid var(--accent-yellow) !important;
+}

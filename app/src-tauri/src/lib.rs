@@ -84,6 +84,57 @@ async fn pick_files() -> Result<Vec<String>, String> {
 }
 
 #[derive(Deserialize)]
+pub struct StageChunkPayload {
+    pub stage_id: String,
+    pub file_name: String,
+    pub data: Vec<u8>,
+    pub is_first: bool,
+}
+
+#[tauri::command]
+async fn stage_file_chunk(
+    payload: StageChunkPayload,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    use std::io::Write;
+    let cache_dir = app.path().app_cache_dir().unwrap_or_else(|_| std::env::temp_dir());
+    let staging_dir = cache_dir.join("ducker_staging");
+    std::fs::create_dir_all(&staging_dir).map_err(|e| e.to_string())?;
+
+    let clean_name = std::path::Path::new(&payload.file_name)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "file.bin".to_string());
+
+    let file_path = staging_dir.join(format!("{}_{}", payload.stage_id, clean_name));
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(payload.is_first)
+        .append(!payload.is_first)
+        .open(&file_path)
+        .map_err(|e| format!("Falha ao abrir arquivo temporário: {e}"))?;
+
+    file.write_all(&payload.data)
+        .map_err(|e| format!("Falha ao gravar arquivo temporário: {e}"))?;
+    file.flush()
+        .map_err(|e| format!("Falha ao descarregar buffer temporário: {e}"))?;
+
+    Ok(file_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn clear_staged_files(app: tauri::AppHandle) -> Result<(), String> {
+    let cache_dir = app.path().app_cache_dir().unwrap_or_else(|_| std::env::temp_dir());
+    let staging_dir = cache_dir.join("ducker_staging");
+    if staging_dir.exists() {
+        let _ = std::fs::remove_dir_all(&staging_dir);
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
 pub struct SendFilesPayload {
     pub peer_key: String,
     pub paths: Vec<String>,
@@ -215,7 +266,13 @@ pub fn run() {
             let identity = Identity::load_or_create(&config_dir, &def_name)
                 .expect("Falha ao inicializar identidade do nó");
 
-            let save_dir = default_save_dir();
+            let save_dir = app
+                .path()
+                .download_dir()
+                .or_else(|_| app.path().document_dir())
+                .or_else(|_| app.path().app_data_dir())
+                .map(|p| p.join("Ducker"))
+                .unwrap_or_else(|_| default_save_dir());
             let _ = std::fs::create_dir_all(&save_dir);
 
             let config = NodeConfig::new(identity, save_dir);
@@ -247,6 +304,8 @@ pub fn run() {
             refresh,
             scan_network,
             pick_files,
+            stage_file_chunk,
+            clear_staged_files,
             send_files,
             send_text,
             respond_request,
