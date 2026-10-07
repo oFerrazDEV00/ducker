@@ -21,6 +21,7 @@ serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 dirs = "5.0"
+tauri-plugin-single-instance = "2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 rfd = "0.17.2"

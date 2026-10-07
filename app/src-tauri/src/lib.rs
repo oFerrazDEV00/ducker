@@ -191,6 +191,13 @@ async fn open_save_dir(state: State<'_, Arc<AppState>>) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }))
         .setup(|app| {
             let config_dir = app
                 .path()
@@ -206,25 +213,19 @@ pub fn run() {
 
             let config = NodeConfig::new(identity, save_dir);
 
+            // Iniciar o nó e registrar o estado sincronicamente no setup
+            let (node, mut events) = tauri::async_runtime::block_on(async {
+                Node::start(config).await
+            }).expect("Falha ao inicializar o nó de rede do Ducker");
+
+            let state = Arc::new(AppState {
+                node,
+                config_dir,
+            });
+            app.manage(state);
+
             let app_handle = app.handle().clone();
-
-            // Iniciar o nó em um runtime async do tokio
             tauri::async_runtime::spawn(async move {
-                let (node, mut events) = match Node::start(config).await {
-                    Ok(res) => res,
-                    Err(e) => {
-                        eprintln!("Erro ao iniciar Ducker Node: {e}");
-                        return;
-                    }
-                };
-
-                let state = Arc::new(AppState {
-                    node,
-                    config_dir,
-                });
-                app_handle.manage(state);
-
-                // Encaminhar todos os eventos do Node para a interface web via Tauri
                 while let Ok(event) = events.recv().await {
                     let _ = app_handle.emit("ducker://event", event);
                 }

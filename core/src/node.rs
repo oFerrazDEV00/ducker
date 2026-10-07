@@ -239,12 +239,18 @@ impl Node {
         tls::install_crypto_provider();
         config.identity.ensure_certificate()?;
 
-        let listener = std::net::TcpListener::bind((Ipv4Addr::UNSPECIFIED, config.port)).map_err(|e| {
-            DuckerError::ConnectionFailed(format!(
-                "não foi possível abrir a porta {} (outro Ducker/LocalSend já está rodando?): {e}",
-                config.port
-            ))
-        })?;
+        let listener = match std::net::TcpListener::bind((Ipv4Addr::UNSPECIFIED, config.port)) {
+            Ok(l) => l,
+            Err(e) => {
+                warn!("Porta padrão {} ocupada ({e}); usando porta dinâmica...", config.port);
+                std::net::TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0)).map_err(|e2| {
+                    DuckerError::ConnectionFailed(format!(
+                        "não foi possível abrir a porta {} nem porta alternativa: {e2}",
+                        config.port
+                    ))
+                })?
+            }
+        };
         listener.set_nonblocking(true)?;
         config.port = listener.local_addr()?.port();
 
