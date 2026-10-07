@@ -1,68 +1,105 @@
+//! Identidade persistente do dispositivo: apelido, ID Quac, certificado TLS e fingerprint.
+//! Salva em `<config_dir>/identity.json`. No desktop o padrão é `~/.ducker`; no mobile
+//! o app Tauri passa o seu `app_data_dir`.
+
 use std::path::{Path, PathBuf};
+
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use crate::error::DuckerError;
+
+use crate::error::{DuckerError, Result};
+use crate::tls;
+
+pub const IDENTITY_FILE: &str = "identity.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct DeviceIdentity {
-    pub device_name: String,
+pub struct Identity {
+    /// Nome exibido para outros dispositivos (`alias` no LocalSend).
+    /// `device_name` é aceito para compatibilidade com o identity.json antigo.
+    #[serde(alias = "device_name")]
+    pub alias: String,
     pub quac_id: u32,
+    #[serde(default)]
+    pub cert_pem: String,
+    #[serde(default)]
+    pub key_pem: String,
+    #[serde(default)]
+    pub fingerprint: String,
 }
 
-impl DeviceIdentity {
-    pub fn new(device_name: impl Into<String>) -> Self {
-        let mut rng = rand::thread_rng();
-        let quac_id: u32 = rng.gen_range(10_000_000..=99_999_999);
-        Self {
-            device_name: device_name.into(),
-            quac_id,
+impl Identity {
+    /// Cria uma identidade nova (gera ID Quac e certificado).
+    pub fn generate(alias: impl Into<String>) -> Result<Self> {
+        let mut id = Self {
+            alias: alias.into(),
+            quac_id: rand::thread_rng().gen_range(10_000_000..=99_999_999),
+            cert_pem: String::new(),
+            key_pem: String::new(),
+            fingerprint: String::new(),
+        };
+        id.ensure_certificate()?;
+        Ok(id)
+    }
+
+    /// Garante que exista certificado + fingerprint (migra identity.json antigo).
+    /// Retorna `true` se algo foi gerado.
+    pub fn ensure_certificate(&mut self) -> Result<bool> {
+        if !self.cert_pem.is_empty() && !self.key_pem.is_empty() {
+            let fp = tls::fingerprint_pem(&self.cert_pem)?;
+            let changed = fp != self.fingerprint;
+            self.fingerprint = fp;
+            return Ok(changed);
         }
+        let (cert, key) = tls::generate_self_signed()?;
+        self.fingerprint = tls::fingerprint_pem(&cert)?;
+        self.cert_pem = cert;
+        self.key_pem = key;
+        Ok(true)
     }
 
-    pub fn with_id(device_name: impl Into<String>, quac_id: u32) -> Self {
-        Self {
-            device_name: device_name.into(),
-            quac_id,
-        }
+    pub fn default_config_dir() -> Result<PathBuf> {
+        let home = dirs::home_dir()
+            .ok_or_else(|| DuckerError::Custom("Não foi possível localizar o diretório do usuário.".into()))?;
+        Ok(home.join(".ducker"))
     }
 
-    pub fn default_config_path() -> Result<PathBuf, DuckerError> {
-        let home_dir = dirs::home_dir().ok_or_else(|| {
-            DuckerError::Custom("Não foi possível localizar o diretório do usuário.".to_string())
-        })?;
-        let config_dir = home_dir.join(".ducker");
-        std::fs::create_dir_all(&config_dir)?;
-        Ok(config_dir.join("identity.json"))
-    }
-
-    pub fn load_from_path(path: &Path) -> Result<Option<Self>, DuckerError> {
+    pub fn load(dir: &Path) -> Result<Option<Self>> {
+        let path = dir.join(IDENTITY_FILE);
         if !path.exists() {
             return Ok(None);
         }
-        let content = std::fs::read_to_string(path)?;
-        let clean_content = content.strip_prefix('\u{feff}').unwrap_or(&content);
-        let identity: Self = serde_json::from_str(clean_content)?;
-        Ok(Some(identity))
+        let content = std::fs::read_to_string(&path)?;
+        // Arquivos salvos pelo PowerShell podem ter BOM UTF-8.
+        let clean = content.strip_prefix('\u{feff}').unwrap_or(&content);
+        let mut id: Self = serde_json::from_str(clean)?;
+        if id.ensure_certificate()? {
+            id.save(dir)?;
+        }
+        Ok(Some(id))
     }
 
-    pub fn save_to_path(&self, path: &Path) -> Result<(), DuckerError> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, content)?;
+    pub fn save(&self, dir: &Path) -> Result<()> {
+        std::fs::create_dir_all(dir)?;
+        std::fs::write(dir.join(IDENTITY_FILE), serde_json::to_string_pretty(self)?)?;
         Ok(())
     }
 
-    pub fn load_default() -> Result<Option<Self>, DuckerError> {
-        let path = Self::default_config_path()?;
-        Self::load_from_path(&path)
+    /// Carrega do diretório ou cria uma identidade nova com `default_alias`.
+    pub fn load_or_create(dir: &Path, default_alias: &str) -> Result<Self> {
+        if let Some(id) = Self::load(dir)? {
+            return Ok(id);
+        }
+        let id = Self::generate(default_alias)?;
+        id.save(dir)?;
+        Ok(id)
     }
+}
 
-    pub fn save_default(&self) -> Result<(), DuckerError> {
-        let path = Self::default_config_path()?;
-        self.save_to_path(&path)
-    }
+/// Apelido padrão sugerido: nome do computador ou "Ducker".
+pub fn default_alias() -> String {
+    std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "Ducker".to_string())
 }
 
 #[cfg(test)]
@@ -70,43 +107,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_quac_id_range() {
-        let identity = DeviceIdentity::new("Teste");
-        assert!(identity.quac_id >= 10_000_000 && identity.quac_id <= 99_999_999);
-        assert_eq!(identity.device_name, "Teste");
+    fn create_and_reload() {
+        crate::tls::install_crypto_provider();
+        let dir = tempfile::tempdir().unwrap();
+        let a = Identity::load_or_create(dir.path(), "Teste").unwrap();
+        assert!(a.quac_id >= 10_000_000 && a.quac_id <= 99_999_999);
+        assert_eq!(a.fingerprint.len(), 64);
+        let b = Identity::load_or_create(dir.path(), "Outro").unwrap();
+        assert_eq!(a, b);
     }
 
     #[test]
-    fn test_identity_serialization() {
-        let identity = DeviceIdentity::with_id("Notebook do Fael", 84726193);
-        let serialized = serde_json::to_string(&identity).unwrap();
-        let deserialized: DeviceIdentity = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(identity, deserialized);
-    }
-
-    #[test]
-    fn test_identity_file_roundtrip() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let path = temp_dir.path().join("identity.json");
-
-        let identity = DeviceIdentity::new("Celular do Fael");
-        identity.save_to_path(&path).unwrap();
-
-        let loaded = DeviceIdentity::load_from_path(&path).unwrap().unwrap();
-        assert_eq!(identity, loaded);
-    }
-
-    #[test]
-    fn test_identity_with_utf8_bom() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let path = temp_dir.path().join("identity_bom.json");
-
-        // Simula arquivo salvo pelo Windows PowerShell com BOM
-        let content = "\u{feff}{\"device_name\": \"Notebook do Fael\", \"quac_id\": 84726193}";
-        std::fs::write(&path, content).unwrap();
-
-        let loaded = DeviceIdentity::load_from_path(&path).unwrap().unwrap();
-        assert_eq!(loaded.device_name, "Notebook do Fael");
-        assert_eq!(loaded.quac_id, 84726193);
+    fn migrates_legacy_file_with_bom() {
+        crate::tls::install_crypto_provider();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(IDENTITY_FILE),
+            "\u{feff}{\"device_name\": \"Notebook do Fael\", \"quac_id\": 84726193}",
+        )
+        .unwrap();
+        let id = Identity::load(dir.path()).unwrap().unwrap();
+        assert_eq!(id.alias, "Notebook do Fael");
+        assert_eq!(id.quac_id, 84726193);
+        assert!(!id.cert_pem.is_empty());
     }
 }

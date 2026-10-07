@@ -83,20 +83,20 @@ Marque `[x]` ao concluir. Itens em ordem de dependência.
 ### Fase 0 — Preparação
 - [x] Branch `rewrite/localsend-rust` criada
 - [x] Este HANDOFF.md
-- [ ] Salvar spec em `ducker/LOCALSEND_PROTOCOL.md`
+- [x] Salvar spec em `ducker/LOCALSEND_PROTOCOL.md`
 
 ### Fase 1 — Core (`core/`)
-- [ ] Remover módulos antigos: `mobile_bridge.rs`, `dashboard.html`, `transfer.rs`, `protocol.rs`, `dialog.rs`, testes antigos
-- [ ] `Cargo.toml` com deps novas (rustls com provider **ring** — NÃO usar aws-lc-rs, quebra build Windows/Android)
-- [ ] `model.rs` (DTOs camelCase, campos opcionais, `deviceType` desconhecido → desktop)
-- [ ] `identity.rs` + `tls.rs` (cert autoassinado, fingerprint, persistência JSON)
-- [ ] `session.rs`
-- [ ] `server.rs` (HTTPS + HTTP, rotas v2; v1 opcional não implementado)
-- [ ] `client.rs` (aceita cert autoassinado; checa fingerprint quando conhecido)
-- [ ] `discovery.rs` (multicast join em todas interfaces IPv4, announce, responder via /register, fallback UDP)
-- [ ] `node.rs` (fachada + eventos)
-- [ ] Testes: envio ponta-a-ponta entre 2 nós em portas diferentes em 127.0.0.1; rejeição; quac mismatch; sha256 mismatch
-- [ ] `cargo test -p ducker-core` verde
+- [x] Remover módulos antigos: `mobile_bridge.rs`, `dashboard.html`, `transfer.rs`, `protocol.rs`, `dialog.rs`, testes antigos
+- [x] `Cargo.toml` com deps novas (rustls com provider **ring** — NÃO usar aws-lc-rs, quebra build Windows/Android)
+- [x] `model.rs` (DTOs camelCase, campos opcionais, `deviceType` desconhecido → desktop)
+- [x] `identity.rs` + `tls.rs` (cert autoassinado, fingerprint, persistência JSON)
+- [x] `session.rs`
+- [x] `server.rs` (HTTPS + HTTP, rotas v2; v1 opcional não implementado)
+- [x] `client.rs` (aceita cert autoassinado; checa fingerprint quando conhecido)
+- [x] `discovery.rs` (multicast join em todas interfaces IPv4, announce, responder via /register, fallback UDP)
+- [x] `node.rs` (fachada + eventos)
+- [x] Testes: envio ponta-a-ponta entre 2 nós em portas diferentes em 127.0.0.1; rejeição; quac mismatch; sha256 mismatch
+- [x] `cargo test -p ducker-core` verde
 
 ### Fase 2 — CLI (`cli/`)
 - [ ] Reescrever comandos: `id`, `serve` (alias `receive`), `devices`, `send <arquivos...> --to <alias|fingerprint|quac|ip[:porta]>`, `text "msg" --to`, `doctor`, `background`, `stop`, `autostart`

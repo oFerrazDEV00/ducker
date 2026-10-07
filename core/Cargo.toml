@@ -1,20 +1,37 @@
 [package]
 name = "ducker-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Core library for Ducker local-first file transfer protocol"
+description = "Ducker core: peer-to-peer local file transfer implementing the LocalSend v2 protocol"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+futures-util = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-rand = "0.8"
 thiserror = "2.0"
-dirs = "5.0"
-axum = { version = "0.7", features = ["ws"] }
-tower-http = { version = "0.6", features = ["cors"] }
-futures-util = "0.3"
 tracing = "0.1"
+dirs = "5.0"
+rand = "0.8"
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+hex = "0.4"
+mime_guess = "2"
+if-addrs = "0.13"
+socket2 = { version = "0.5", features = ["all"] }
+
+# HTTP server (receiver side)
+axum = "0.7"
+axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+
+# TLS — IMPORTANT: always use the `ring` provider (aws-lc-rs breaks Windows/Android builds without cmake/nasm)
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-pemfile = "2"
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "ring"] }
+
+# HTTP client (sender side)
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls-manual-roots"] }
 
 [dev-dependencies]
 tempfile = "3"

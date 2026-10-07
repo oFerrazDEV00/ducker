@@ -1,169 +1,191 @@
-use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+//! Descoberta de dispositivos:
+//! 1. Multicast UDP (padrão LocalSend): anúncio + resposta via `/register` (ou UDP como fallback).
+//! 2. Scan HTTP legado da sub-rede /24 (quando multicast não funciona, ex: Android sem MulticastLock).
+
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
-use tracing::{debug, error, warn};
+use std::time::Duration;
 
-use crate::error::DuckerError;
-use crate::identity::DeviceIdentity;
-use crate::protocol::{DiscoveryAnnouncement, DEFAULT_DISCOVERY_PORT, DEFAULT_TRANSFER_PORT};
+use futures_util::StreamExt;
+use socket2::{Domain, Socket, SockRef, Type};
+use tokio::net::UdpSocket;
+use tracing::{debug, info, warn};
 
-#[derive(Debug, Clone)]
-pub struct DiscoveredDevice {
-    pub quac_id: u32,
-    pub device_name: String,
-    pub address: String,
-    pub port: u16,
-    pub protocol_version: u32,
-    pub last_seen: Instant,
+use crate::client::PeerClient;
+use crate::error::Result;
+use crate::model::{MulticastDto, Protocol};
+use crate::node::{NodeInner, Peer};
+
+/// IPv4 locais (não-loopback) de todas as interfaces ativas.
+pub fn local_ipv4s() -> Vec<Ipv4Addr> {
+    let mut out: Vec<Ipv4Addr> = if_addrs::get_if_addrs()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|i| !i.is_loopback())
+        .filter_map(|i| match i.ip() {
+            IpAddr::V4(v4) if !v4.is_link_local() => Some(v4),
+            _ => None,
+        })
+        .collect();
+    out.sort();
+    out.dedup();
+    out
 }
 
-pub struct DiscoveryManager {
-    identity: DeviceIdentity,
-    transfer_port: u16,
-    discovery_port: u16,
-    devices: Arc<RwLock<HashMap<u32, DiscoveredDevice>>>,
+pub(crate) async fn start(inner: Arc<NodeInner>) -> Result<()> {
+    let group = inner.config.multicast_addr;
+    let mport = inner.config.multicast_port;
+
+    let sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(socket2::Protocol::UDP))?;
+    sock.set_reuse_address(true)?;
+    #[cfg(all(unix, not(any(target_os = "solaris", target_os = "illumos"))))]
+    sock.set_reuse_port(true)?;
+    sock.bind(&SocketAddr::from((Ipv4Addr::UNSPECIFIED, mport)).into())?;
+    sock.set_multicast_loop_v4(true)?;
+
+    let mut joined = 0;
+    for ip in local_ipv4s() {
+        match sock.join_multicast_v4(&group, &ip) {
+            Ok(()) => joined += 1,
+            Err(e) => debug!("Falha ao entrar no grupo multicast pela interface {ip}: {e}"),
+        }
+    }
+    if joined == 0 {
+        sock.join_multicast_v4(&group, &Ipv4Addr::UNSPECIFIED)?;
+    }
+    sock.set_nonblocking(true)?;
+    let udp = Arc::new(UdpSocket::from_std(sock.into())?);
+    let _ = inner.udp.set(udp.clone());
+    info!("Descoberta multicast ativa em {group}:{mport} ({joined} interface(s))");
+
+    let listen = tokio::spawn(listen_loop(inner.clone(), udp));
+    let inner2 = inner.clone();
+    let announcer = tokio::spawn(async move {
+        // Mesmo padrão do LocalSend: rajada inicial, depois anúncios periódicos.
+        for delay in [100u64, 500, 2000] {
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+            announce(&inner2, true).await;
+        }
+        loop {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            announce(&inner2, true).await;
+        }
+    });
+    inner.tasks.lock().unwrap().extend([listen, announcer]);
+    Ok(())
 }
 
-impl DiscoveryManager {
-    pub fn new(identity: DeviceIdentity) -> Self {
-        Self {
-            identity,
-            transfer_port: DEFAULT_TRANSFER_PORT,
-            discovery_port: DEFAULT_DISCOVERY_PORT,
-            devices: Arc::new(RwLock::new(HashMap::new())),
+/// Envia nosso `MulticastDto` em todas as interfaces.
+pub(crate) async fn announce(inner: &Arc<NodeInner>, is_announce: bool) {
+    let Some(udp) = inner.udp.get() else { return };
+    let dto = MulticastDto::new(inner.device_info(), is_announce);
+    let Ok(bytes) = serde_json::to_vec(&dto) else { return };
+    let target = SocketAddr::from((inner.config.multicast_addr, inner.config.multicast_port));
+    let ifaces = local_ipv4s();
+    if ifaces.is_empty() {
+        let _ = udp.send_to(&bytes, target).await;
+        return;
+    }
+    for ip in ifaces {
+        let _ = SockRef::from(udp.as_ref()).set_multicast_if_v4(&ip);
+        if let Err(e) = udp.send_to(&bytes, target).await {
+            debug!("Falha ao anunciar pela interface {ip}: {e}");
         }
     }
+}
 
-    pub fn with_ports(identity: DeviceIdentity, transfer_port: u16, discovery_port: u16) -> Self {
-        Self {
-            identity,
-            transfer_port,
-            discovery_port,
-            devices: Arc::new(RwLock::new(HashMap::new())),
+async fn listen_loop(inner: Arc<NodeInner>, udp: Arc<UdpSocket>) {
+    let mut buf = vec![0u8; 16 * 1024];
+    loop {
+        let (n, src) = match udp.recv_from(&mut buf).await {
+            Ok(v) => v,
+            Err(e) => {
+                // No Windows, UDP pode retornar WSAECONNRESET; apenas ignore.
+                debug!("Erro ao receber multicast: {e}");
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                continue;
+            }
+        };
+        let Ok(dto) = serde_json::from_slice::<MulticastDto>(&buf[..n]) else { continue };
+        let is_announce = dto.is_announce();
+        let Some(peer) = inner.add_peer_from_info(dto.info, src.ip()) else { continue };
+        if is_announce {
+            let inner = inner.clone();
+            tokio::spawn(async move { respond_to_announce(inner, peer).await });
         }
     }
+}
 
-    /// Obtém o IP da interface de rede local ativa
-    pub fn get_local_ip() -> Option<IpAddr> {
-        // Conexão fictícia para descobrir a rota de saída da LAN
-        let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
-        socket.connect("8.8.8.8:80").ok()?;
-        socket.local_addr().ok().map(|addr| addr.ip())
+/// Responde a um anúncio: primeiro via HTTP `/register`, se falhar via UDP.
+async fn respond_to_announce(inner: Arc<NodeInner>, peer: Peer) {
+    let me = inner.device_info();
+    let result = match PeerClient::new(peer.protocol, peer.ip, peer.port, None, Some(Duration::from_secs(3))) {
+        Ok(client) => client.register(&me).await,
+        Err(e) => Err(e),
+    };
+    match result {
+        Ok(info) => {
+            inner.add_peer_from_info(info, peer.ip);
+        }
+        Err(e) => {
+            debug!("register em {} falhou ({e}); respondendo via UDP", peer.ip);
+            announce(&inner, false).await;
+        }
+    }
+}
+
+/// Scan HTTP legado: tenta `/register` em todos os hosts /24 de cada interface.
+/// Retorna quantos dispositivos responderam.
+pub(crate) async fn scan_subnet(inner: Arc<NodeInner>) -> usize {
+    let me = inner.device_info();
+    let port = inner.config.port;
+    let protocol = inner.config.protocol;
+    let own: Vec<Ipv4Addr> = local_ipv4s();
+
+    let mut targets = Vec::new();
+    for ip in &own {
+        let [a, b, c, _] = ip.octets();
+        for d in 1..=254u8 {
+            let t = Ipv4Addr::new(a, b, c, d);
+            if !own.contains(&t) {
+                targets.push(t);
+            }
+        }
+    }
+    if targets.is_empty() {
+        warn!("Nenhuma interface de rede IPv4 encontrada para o scan");
+        return 0;
     }
 
-    /// Inicia o serviço de anúncio e escuta de descoberta
-    pub async fn start(&self) -> Result<(), DuckerError> {
-        let own_quac_id = self.identity.quac_id;
-        let own_name = self.identity.device_name.clone();
-        let transfer_port = self.transfer_port;
-        let discovery_port = self.discovery_port;
-
-        // 1. Iniciar tarefa de escuta de anúncios UDP
-        let devices_store = Arc::clone(&self.devices);
-        tokio::spawn(async move {
-            let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), discovery_port);
-            let socket = match tokio::net::UdpSocket::bind(bind_addr).await {
-                Ok(s) => s,
-                Err(e) => {
-                    warn!("Não foi possível escutar na porta de descoberta {}: {}", discovery_port, e);
-                    return;
-                }
-            };
-
-            let mut buf = [0u8; 2048];
-            loop {
-                match socket.recv_from(&mut buf).await {
-                    Ok((len, peer_addr)) => {
-                        if let Ok(announcement) = serde_json::from_slice::<DiscoveryAnnouncement>(&buf[..len]) {
-                            if announcement.is_valid() && announcement.quac_id != own_quac_id {
-                                // Se o endereço anunciado for 0.0.0.0 ou vazio, usa o peer_addr
-                                let resolved_address = if announcement.address.is_empty() || announcement.address == "0.0.0.0" {
-                                    peer_addr.ip().to_string()
-                                } else {
-                                    announcement.address.clone()
-                                };
-
-                                let device = DiscoveredDevice {
-                                    quac_id: announcement.quac_id,
-                                    device_name: announcement.device_name,
-                                    address: resolved_address,
-                                    port: announcement.port,
-                                    protocol_version: announcement.protocol_version,
-                                    last_seen: Instant::now(),
-                                };
-
-                                let mut lock = devices_store.write().await;
-                                lock.insert(device.quac_id, device);
-                            }
+    let found = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    futures_util::stream::iter(targets)
+        .for_each_concurrent(64, |ip| {
+            let inner = inner.clone();
+            let me = me.clone();
+            let found = found.clone();
+            async move {
+                for proto in [protocol, other(protocol)] {
+                    let Ok(client) = PeerClient::new(proto, IpAddr::V4(ip), port, None, Some(Duration::from_millis(1500))) else {
+                        return;
+                    };
+                    if let Ok(mut info) = client.register(&me).await {
+                        info.port.get_or_insert(port);
+                        info.protocol.get_or_insert(proto);
+                        if inner.add_peer_from_info(info, IpAddr::V4(ip)).is_some() {
+                            found.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         }
-                    }
-                    Err(e) => {
-                        debug!("Erro ao receber pacote UDP: {}", e);
+                        return;
                     }
                 }
             }
-        });
+        })
+        .await;
+    found.load(std::sync::atomic::Ordering::SeqCst)
+}
 
-        // 2. Iniciar tarefa de envio periódico de anúncio (Beacon)
-        tokio::spawn(async move {
-            let socket = match tokio::net::UdpSocket::bind("0.0.0.0:0").await {
-                Ok(s) => {
-                    if let Err(e) = s.set_broadcast(true) {
-                        warn!("Falha ao habilitar broadcast UDP: {}", e);
-                    }
-                    s
-                }
-                Err(e) => {
-                    error!("Falha ao criar socket de broadcast: {}", e);
-                    return;
-                }
-            };
-
-            let broadcast_target = SocketAddr::new(
-                IpAddr::V4(Ipv4Addr::BROADCAST),
-                discovery_port,
-            );
-
-            loop {
-                let local_ip = Self::get_local_ip()
-                    .map(|ip| ip.to_string())
-                    .unwrap_or_else(|| "127.0.0.1".to_string());
-
-                let announcement = DiscoveryAnnouncement::new(
-                    own_quac_id,
-                    &own_name,
-                    &local_ip,
-                    transfer_port,
-                );
-
-                if let Ok(bytes) = serde_json::to_vec(&announcement) {
-                    let _ = socket.send_to(&bytes, broadcast_target).await;
-                }
-
-                tokio::time::sleep(Duration::from_millis(1500)).await;
-            }
-        });
-
-        Ok(())
-    }
-
-    /// Registra manualmente um dispositivo (ex: cliente Mobile conectado via bridge)
-    pub async fn register_device(&self, device: DiscoveredDevice) {
-        let mut lock = self.devices.write().await;
-        lock.insert(device.quac_id, device);
-    }
-
-    /// Retorna lista de dispositivos ativos na rede (vistos nos últimos 6 segundos)
-    pub async fn list_devices(&self) -> Vec<DiscoveredDevice> {
-        let mut lock = self.devices.write().await;
-        let now = Instant::now();
-        let timeout = Duration::from_secs(6);
-
-        // Limpar dispositivos expirados
-        lock.retain(|_, dev| now.duration_since(dev.last_seen) <= timeout);
-
-        lock.values().cloned().collect()
+fn other(p: Protocol) -> Protocol {
+    match p {
+        Protocol::Http => Protocol::Https,
+        Protocol::Https => Protocol::Http,
     }
 }
