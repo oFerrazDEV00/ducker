@@ -111,23 +111,21 @@ Marque `[x]` ao concluir. Itens em ordem de dependência.
 - [x] Eventos Tauri emitidos a partir de `NodeEvent` (`ducker://event`)
 - [x] UI premium (dark, glassmorphism) em `app/ui/`
 - [x] `cargo check -p ducker-app` verde no Windows
-- [x] `cargo build -p ducker-app` gerando `ducker-app.exe` nativo
-- [ ] Android: `cargo tauri android init` + MulticastLock (ver Pendências)
+- [x] `cargo build -p ducker-app` gerando `ducker-app.exe` nativo com seletor nativo de arquivos via `rfd`
+- [ ] Android: `tauri android init` + MulticastLock (requer Java/Android SDK na máquina; fallback `scan_subnet()` já implementado no core)
 
 ### Fase 4 — Docs e limpeza
 - [x] Atualizar `ducker/ARCHITECTURE.md`, `ducker/TRANSFER_PROTOCOL.md`, `ducker/CLI.md`, `README.md`
 - [x] Atualizar `.bat` (ducker-open.bat → abre app visual `ducker-app.exe`)
-- [ ] Teste manual com app LocalSend oficial
+- [ ] Teste manual com app LocalSend oficial no smartphone
 
 ## 4. Pendências / armadilhas conhecidas
 
-- **Android multicast:** precisa `WifiManager.MulticastLock` (Java/Kotlin). Criar plugin Tauri mínimo
-  ou usar `scan_subnet()` como fallback (já previsto no core). Permissões: `INTERNET`,
-  `ACCESS_WIFI_STATE`, `CHANGE_WIFI_MULTICAST_STATE`, `ACCESS_NETWORK_STATE`.
+- **Android multicast:** precisa `WifiManager.MulticastLock` (Java/Kotlin). Requer instalação do Java (JDK) e Android Studio/SDK para executar `npx @tauri-apps/cli android init`. O core já possui `scan_subnet()` (/24 HTTP scan) como fallback funcional caso o lock não esteja presente.
 - **iOS:** precisa entitlement `com.apple.developer.networking.multicast` (pedido à Apple). Até lá, usar scan.
 - **Diretório de config no mobile:** `dirs::home_dir()` não serve; o app passa `app.path().app_data_dir()`
   para `Identity::load_or_create`. Save dir no Android: `app.path().download_dir()` ou documento do app.
-- **Firewall Windows:** porta TCP+UDP 53317 precisa estar liberada (o `ducker doctor` deve avisar).
+- **Firewall Windows:** porta TCP+UDP 53317 precisa estar liberada (o `ducker doctor` valida e avisa).
 - **rustls provider:** chamar `ducker_core::tls::install_crypto_provider()` uma vez no início (feito em `Node::start`).
 - **Fingerprint:** LocalSend usa SHA-256 do certificado em hex. Comparar sempre *case-insensitive*.
 - Rotas v1 (`/api/localsend/v1/*`) não implementadas — só v2.
@@ -136,10 +134,12 @@ Marque `[x]` ao concluir. Itens em ordem de dependência.
 
 ```powershell
 cargo test -p ducker-core
+cargo run -p ducker-cli -- doctor
+cargo run -p ducker-cli -- id
 cargo run -p ducker-cli -- serve --yes          # terminal 1
 cargo run -p ducker-cli -- devices              # terminal 2
 cargo run -p ducker-cli -- send .\README.md --to <alias>
-cargo run -p ducker-app                          # app desktop (Tauri)
+.\ducker-open.bat                               # abre o app visual desktop Tauri
 ```
 
 ## 6. Log de sessões
@@ -147,7 +147,10 @@ cargo run -p ducker-app                          # app desktop (Tauri)
 - 2026-10-07 — Sessão 1 (Opus): plano criado, decisões registradas, início da Fase 1.
 - 2026-10-07 — Sessão 2 (Gemini):
   * Corrigido erro de lifetime em `tls.rs` e teste cross-platform em `session.rs`.
-  * Fase 1: 100% dos testes unitários e de integração e2e passando (15 testes verdes).
+  * Fase 1: 100% dos testes unitários e de integração e2e passando (15 testes verdes no `ducker-core`).
   * Fase 2: CLI totalmente reescrita com `id`, `devices`, `send`, `text`, `serve`, `doctor`, `background`, `stop`.
-  * Fase 3: App Tauri v2 criado (`app/src-tauri` e `app/ui/`) com UI moderna glassmorphism, radar, envio de arquivos e mensagens, e compilado com sucesso (`ducker-app.exe` e `ducker.exe` em `target/debug/`).
-  * Fase 4: `.bat` atualizados, `README.md`, `ARCHITECTURE.md`, `CLI.md`, `TRANSFER_PROTOCOL.md` atualizados. Commit final na branch `rewrite/localsend-rust`.
+  * Fase 3: App Tauri v2 criado (`app/src-tauri` e `app/ui/`) com UI moderna glassmorphism, radar, envio de arquivos com diálogo nativo do sistema via `rfd`, mensagens instantâneas e notificações, compilado com sucesso (`ducker-app.exe` e `ducker.exe` em `target/debug/`).
+  * Fase 4: `.bat` atualizados, `README.md`, `ARCHITECTURE.md`, `CLI.md`, `TRANSFER_PROTOCOL.md` atualizados.
+  * Commits efetuados na branch `rewrite/localsend-rust`:
+    - `d063d06` feat(app): implement Tauri v2 desktop app, update docs and launchers for LocalSend v2
+    - `dd99f44` feat(app): integrate native file picker dialog via rfd for desktop UI
