@@ -1,4 +1,6 @@
-# 🦆 Ducker
+<p align="center">
+  <img src="app/ui/assets/logo.png" alt="Ducker - Be simple, be duck" width="340">
+</p>
 
 > **Be simple, be duck.** Transferência de arquivos ponto-a-ponto (P2P) na rede local, rápida, segura e sem servidores externos, implementada 100% em **Rust** sobre o protocolo **LocalSend v2**.
 

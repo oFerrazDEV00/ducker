@@ -1159,13 +1159,31 @@ body {
 .about-card-body {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 20px;
 }
 
-.about-duck-img {
-  width: 52px;
-  height: 52px;
-  image-rendering: pixelated;
+.about-logo-wrapper {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 180px;
+  flex-shrink: 0;
+}
+
+.about-brand-logo {
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+.about-text-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 /* ==================== MODAL ==================== */
