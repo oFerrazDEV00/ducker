@@ -55,8 +55,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Tauri CLI
-        run: npm install -g @tauri-apps/cli
+      - name: Install Tauri CLI & Node Dependencies
+        working-directory: ./app
+        run: |
+          npm install -g @tauri-apps/cli
+          npm install
+          cd src-tauri && npm install && cd ..
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -90,14 +94,25 @@ jobs:
           MANIFEST=$(find app/src-tauri/gen/android -name "AndroidManifest.xml" | head -n 1)
           if [ -n "$MANIFEST" ]; then
             echo "Ajustando permissões no $MANIFEST..."
-            sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />\n    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />' "$MANIFEST"
+            for PERM in "ACCESS_NETWORK_STATE" "ACCESS_WIFI_STATE" "CHANGE_WIFI_MULTICAST_STATE"; do
+              if ! grep -q "android.permission.$PERM" "$MANIFEST"; then
+                sed -i "/<manifest/a \    <uses-permission android:name=\"android.permission.$PERM\" />" "$MANIFEST"
+              fi
+            done
+          fi
+
+      - name: Ensure Node Modules & package.json for Gradle
+        run: |
+          cp app/package.json app/src-tauri/package.json || true
+          if [ -d "app/node_modules" ] && [ ! -d "app/src-tauri/node_modules" ]; then
+            cp -r app/node_modules app/src-tauri/node_modules || true
           fi
 
       - name: Build Android APK
         working-directory: ./app
         run: |
           chmod +x src-tauri/gen/android/gradlew || true
-          npx tauri android build --ci --debug --apk
+          npx tauri android build --ci --debug --apk --target aarch64
 
       - name: Collect APK Files
         run: |
@@ -118,19 +133,32 @@ jobs:
   build-ios:
     name: Build iOS IPA
     if: ${{ github.event.inputs.build_target != 'android' }}
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        run: |
+          XCODE_16=$(find /Applications -maxdepth 1 -name "Xcode_16*.app" | sort -V | tail -n 1)
+          if [ -n "$XCODE_16" ]; then
+            echo "Selecting $XCODE_16"
+            sudo xcode-select -s "$XCODE_16/Contents/Developer"
+          fi
+          xcodebuild -version
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install Tauri CLI
-        run: npm install -g @tauri-apps/cli
+      - name: Install Tauri CLI & Node Dependencies
+        working-directory: ./app
+        run: |
+          npm install -g @tauri-apps/cli
+          npm install
+          cd src-tauri && npm install && cd ..
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -157,6 +185,14 @@ jobs:
             npx tauri ios init --ci --skip-targets-install
           fi
 
+      - name: Ensure Xcode Project Compatibility
+        run: |
+          PBXPROJ=$(find app/src-tauri/gen/apple -name "project.pbxproj" | head -n 1)
+          if [ -n "$PBXPROJ" ]; then
+            echo "Ajustando objectVersion em $PBXPROJ..."
+            sed -i '' 's/objectVersion = 77;/objectVersion = 60;/g' "$PBXPROJ" || true
+          fi
+
       - name: Build iOS Application (Unsigned)
         working-directory: ./app
         run: |
@@ -172,6 +208,7 @@ jobs:
             cd output/ios
             zip -r Ducker-iOS-unsigned.ipa Payload
             cd ../..
+            ls -lah output/ios
           else
             echo "Nenhum diretório .app encontrado!"
             exit 1

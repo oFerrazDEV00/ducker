@@ -1,0 +1,13 @@
+{
+  "name": "ducker-src-tauri",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Ducker backend crate runner",
+  "scripts": {
+    "build": "echo 'Frontend ready'",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.0"
+  }
+}

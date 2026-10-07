@@ -1,0 +1,13 @@
+{
+  "name": "ducker-app",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Ducker - Local peer-to-peer file transfer app",
+  "scripts": {
+    "build": "echo 'Frontend ready'",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.0"
+  }
+}
