@@ -30,12 +30,13 @@ impl PeerClient {
         protocol: Protocol,
         ip: IpAddr,
         port: u16,
+        client_cert_key: Option<(&str, &str)>,
         expected_fingerprint: Option<String>,
         timeout: Option<Duration>,
     ) -> Result<Self> {
         tls::install_crypto_provider();
         let mut builder = reqwest::Client::builder()
-            .use_preconfigured_tls(tls::client_config(expected_fingerprint))
+            .use_preconfigured_tls(tls::client_config(client_cert_key, expected_fingerprint))
             .connect_timeout(Duration::from_secs(10))
             .no_proxy();
         if let Some(t) = timeout {

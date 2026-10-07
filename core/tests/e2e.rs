@@ -161,7 +161,7 @@ async fn checksum_mismatch_returns_422_and_deletes_file() {
     let b = spawn("B", true, Protocol::Https).await;
     let _ = connect(&a, &b).await;
 
-    let client = PeerClient::new(Protocol::Https, "127.0.0.1".parse().unwrap(), b.node.port(), None, None).unwrap();
+    let client = PeerClient::new(Protocol::Https, "127.0.0.1".parse().unwrap(), b.node.port(), None, None, None).unwrap();
     let dto = FileDto {
         id: "f1".into(),
         file_name: "bad.txt".into(),
@@ -186,12 +186,12 @@ async fn checksum_mismatch_returns_422_and_deletes_file() {
 #[tokio::test]
 async fn info_endpoint_works() {
     let a = spawn("Pato", true, Protocol::Https).await;
-    let client = PeerClient::new(Protocol::Https, "127.0.0.1".parse().unwrap(), a.node.port(), Some(a.node.identity().fingerprint), None).unwrap();
+    let client = PeerClient::new(Protocol::Https, "127.0.0.1".parse().unwrap(), a.node.port(), None, Some(a.node.identity().fingerprint), None).unwrap();
     let info = client.info().await.unwrap();
     assert_eq!(info.alias, "Pato");
     assert_eq!(info.fingerprint, a.node.identity().fingerprint);
 
     // Pinning com fingerprint errado deve falhar
-    let bad = PeerClient::new(Protocol::Https, "127.0.0.1".parse().unwrap(), a.node.port(), Some("A".repeat(64)), None).unwrap();
+    let bad = PeerClient::new(Protocol::Https, "127.0.0.1".parse().unwrap(), a.node.port(), None, Some("A".repeat(64)), None).unwrap();
     assert!(bad.info().await.is_err());
 }

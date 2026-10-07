@@ -123,20 +123,34 @@ impl ServerCertVerifier for FingerprintVerifier {
     }
 }
 
-/// Config rustls do cliente. `expected_fingerprint = None` aceita qualquer certificado.
-pub fn client_config(expected_fingerprint: Option<String>) -> rustls::ClientConfig {
+/// Config rustls do cliente com certificado de autenticação de cliente (mTLS exigido pelo LocalSend).
+pub fn client_config(
+    client_cert_key: Option<(&str, &str)>,
+    expected_fingerprint: Option<String>,
+) -> rustls::ClientConfig {
     let provider = provider();
     let verifier = Arc::new(FingerprintVerifier {
         // Fingerprints vazios (peers em HTTP ou sem fingerprint) não são verificados.
         expected: expected_fingerprint.filter(|f| f.len() == 64),
         provider: provider.clone(),
     });
-    rustls::ClientConfig::builder_with_provider(provider)
+    let builder = rustls::ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .expect("versões TLS padrão")
         .dangerous()
-        .with_custom_certificate_verifier(verifier)
-        .with_no_client_auth()
+        .with_custom_certificate_verifier(verifier);
+
+    let (cert_pem, key_pem) = match client_cert_key {
+        Some((c, k)) => (c.to_string(), k.to_string()),
+        None => generate_self_signed().expect("geração de cert do cliente"),
+    };
+
+    let cert = parse_cert_der(&cert_pem).expect("parse cert der");
+    let key = parse_key_der(&key_pem).expect("parse key der");
+
+    builder
+        .with_client_auth_cert(vec![cert], key)
+        .expect("configuração de mTLS do cliente")
 }
 
 #[cfg(test)]
@@ -150,6 +164,6 @@ mod tests {
         let fp = fingerprint_pem(&cert).unwrap();
         assert_eq!(fp.len(), 64);
         assert!(server_config(&cert, &key).is_ok());
-        let _ = client_config(Some(fp));
+        let _ = client_config(Some((&cert, &key)), Some(fp));
     }
 }

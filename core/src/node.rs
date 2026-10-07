@@ -108,18 +108,18 @@ impl Peer {
         self.info.quac_id.is_some()
     }
 
-    fn client(&self, timeout: Option<Duration>) -> Result<PeerClient> {
+    fn client(&self, client_cert_key: Option<(&str, &str)>, timeout: Option<Duration>) -> Result<PeerClient> {
         // Pinning estrito só entre nós Ducker (mesmo algoritmo de fingerprint garantido).
         let pin = (self.protocol == Protocol::Https && self.is_ducker()).then(|| self.info.fingerprint.clone());
-        PeerClient::new(self.protocol, self.ip, self.port, pin, timeout)
+        PeerClient::new(self.protocol, self.ip, self.port, client_cert_key, pin, timeout)
     }
 
-    fn fallback_client(&self, timeout: Option<Duration>) -> Option<PeerClient> {
+    fn fallback_client(&self, client_cert_key: Option<(&str, &str)>, timeout: Option<Duration>) -> Option<PeerClient> {
         let alt = match self.protocol {
             Protocol::Https => Protocol::Http,
             Protocol::Http => Protocol::Https,
         };
-        PeerClient::new(alt, self.ip, self.port, None, timeout).ok()
+        PeerClient::new(alt, self.ip, self.port, client_cert_key, None, timeout).ok()
     }
 }
 
@@ -352,9 +352,11 @@ impl Node {
     /// Conecta diretamente a um IP (tenta HTTPS e depois HTTP).
     pub async fn connect(&self, ip: IpAddr, port: u16) -> Result<Peer> {
         let me = self.inner.device_info();
+        let id = self.inner.identity();
+        let cert_key = (id.cert_pem.as_str(), id.key_pem.as_str());
         let mut last_err = DuckerError::DeviceNotFound;
         for proto in [Protocol::Https, Protocol::Http] {
-            let client = PeerClient::new(proto, ip, port, None, Some(Duration::from_secs(5)))?;
+            let client = PeerClient::new(proto, ip, port, Some(cert_key), None, Some(Duration::from_secs(5)))?;
             match client.register(&me).await {
                 Ok(mut info) => {
                     info.port.get_or_insert(port);
@@ -429,14 +431,16 @@ impl Node {
         }
 
         // prepare-upload pode demorar (o usuário do outro lado precisa aceitar).
-        let client = peer.client(None)?;
+        let id = self.inner.identity();
+        let cert_key = (id.cert_pem.as_str(), id.key_pem.as_str());
+        let client = peer.client(Some(cert_key), None)?;
         let req = PrepareUploadRequest { info: self.inner.device_info(), files };
         let (active_client, resp) = match client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await {
             Ok(r) => (client, r),
             Err(e) => {
                 // Tenta fallback com o protocolo alternativo se falhar por conexão (ex: HTTPS -> HTTP ou vice-versa)
                 if matches!(e, DuckerError::ConnectionFailed(_)) {
-                    if let Some(alt_client) = peer.fallback_client(None) {
+                    if let Some(alt_client) = peer.fallback_client(Some(cert_key), None) {
                         match alt_client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await {
                             Ok(r) => (alt_client, r),
                             Err(_) => return Err(e),
@@ -479,23 +483,25 @@ impl Node {
 
     /// Envia uma mensagem de texto (exibida direto no destino).
     pub async fn send_text(&self, peer: &Peer, text: &str, opts: SendOptions) -> Result<()> {
-        let id = uuid::Uuid::new_v4().to_string();
+        let msg_id = uuid::Uuid::new_v4().to_string();
         let dto = FileDto {
-            id: id.clone(),
-            file_name: format!("{id}.txt"),
+            id: msg_id.clone(),
+            file_name: format!("{msg_id}.txt"),
             size: text.len() as u64,
             file_type: "text/plain".into(),
             sha256: None,
             preview: Some(text.to_string()),
             metadata: None,
         };
-        let client = peer.client(None)?;
-        let req = PrepareUploadRequest { info: self.inner.device_info(), files: HashMap::from([(id.clone(), dto)]) };
+        let ident = self.inner.identity();
+        let cert_key = (ident.cert_pem.as_str(), ident.key_pem.as_str());
+        let client = peer.client(Some(cert_key), None)?;
+        let req = PrepareUploadRequest { info: self.inner.device_info(), files: HashMap::from([(msg_id.clone(), dto)]) };
         let (active_client, resp) = match client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await {
             Ok(r) => (client, r),
             Err(e) => {
                 if matches!(e, DuckerError::ConnectionFailed(_)) {
-                    if let Some(alt_client) = peer.fallback_client(None) {
+                    if let Some(alt_client) = peer.fallback_client(Some(cert_key), None) {
                         match alt_client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await {
                             Ok(r) => (alt_client, r),
                             Err(_) => return Err(e),
@@ -510,8 +516,8 @@ impl Node {
         };
         if let Some(resp) = resp {
             // Receptor preferiu receber como arquivo.
-            if let Some(token) = resp.files.get(&id) {
-                active_client.upload_bytes(&resp.session_id, &id, token, text.as_bytes().to_vec()).await?;
+            if let Some(token) = resp.files.get(&msg_id) {
+                active_client.upload_bytes(&resp.session_id, &msg_id, token, text.as_bytes().to_vec()).await?;
             }
         }
         Ok(())

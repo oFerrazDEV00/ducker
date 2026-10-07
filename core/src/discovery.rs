@@ -126,7 +126,9 @@ async fn listen_loop(inner: Arc<NodeInner>, udp: Arc<UdpSocket>) {
 /// Responde a um anúncio: primeiro via HTTP `/register`, se falhar via UDP (unicast direto + multicast).
 async fn respond_to_announce(inner: Arc<NodeInner>, peer: Peer) {
     let me = inner.device_info();
-    let result = match PeerClient::new(peer.protocol, peer.ip, peer.port, None, Some(Duration::from_secs(3))) {
+    let id = inner.identity();
+    let cert_key = (id.cert_pem.as_str(), id.key_pem.as_str());
+    let result = match PeerClient::new(peer.protocol, peer.ip, peer.port, Some(cert_key), None, Some(Duration::from_secs(3))) {
         Ok(client) => client.register(&me).await,
         Err(e) => Err(e),
     };
@@ -172,14 +174,18 @@ pub(crate) async fn scan_subnet(inner: Arc<NodeInner>) -> usize {
     }
 
     let found = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let id = inner.identity();
+    let cert_pair = Arc::new((id.cert_pem, id.key_pem));
     futures_util::stream::iter(targets)
         .for_each_concurrent(64, |ip| {
             let inner = inner.clone();
             let me = me.clone();
             let found = found.clone();
+            let cert_pair = cert_pair.clone();
             async move {
+                let cert_key = (cert_pair.0.as_str(), cert_pair.1.as_str());
                 for proto in [protocol, other(protocol)] {
-                    let Ok(client) = PeerClient::new(proto, IpAddr::V4(ip), port, None, Some(Duration::from_millis(1500))) else {
+                    let Ok(client) = PeerClient::new(proto, IpAddr::V4(ip), port, Some(cert_key), None, Some(Duration::from_millis(1500))) else {
                         return;
                     };
                     if let Ok(mut info) = client.register(&me).await {
