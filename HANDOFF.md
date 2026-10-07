@@ -155,3 +155,4 @@ cargo run -p ducker-cli -- send .\README.md --to <alias>
     - `d063d06` feat(app): implement Tauri v2 desktop app, update docs and launchers for LocalSend v2
     - `dd99f44` feat(app): integrate native file picker dialog via rfd for desktop UI
     - `8cd515b` fix(stability): fix peer flickering with TTL retention, broadcast discovery, and robust peer lookup for transfers
+    - `2ff61c0` fix(tls): support LocalSend mTLS by presenting client certificate during TLS handshake
