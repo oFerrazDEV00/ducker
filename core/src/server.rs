@@ -29,7 +29,10 @@ pub(crate) fn router(inner: Arc<NodeInner>) -> Router {
     Router::new()
         .route(&format!("{API_PREFIX}/register"), post(register))
         .route(&format!("{API_PREFIX}/info"), get(info_handler))
-        .route(&format!("{API_PREFIX}/prepare-upload"), post(prepare_upload))
+        .route(
+            &format!("{API_PREFIX}/prepare-upload"),
+            post(prepare_upload),
+        )
         .route(&format!("{API_PREFIX}/upload"), post(upload))
         .route(&format!("{API_PREFIX}/cancel"), post(cancel))
         .layer(DefaultBodyLimit::disable())
@@ -72,7 +75,10 @@ async fn prepare_upload(
     }
     if let Some(quac) = q.quac {
         if quac != inner.identity().quac_id {
-            warn!("Pedido interceptado: ID Quac {} não corresponde a este dispositivo", quac);
+            warn!(
+                "Pedido interceptado: ID Quac {} não corresponde a este dispositivo",
+                quac
+            );
             return (StatusCode::FORBIDDEN, "DESTINATION_ID_MISMATCH").into_response();
         }
     }
@@ -115,7 +121,12 @@ async fn prepare_upload(
         true
     } else {
         let (tx, rx) = oneshot::channel();
-        inner.sessions.pending.lock().unwrap().insert(session_id.clone(), tx);
+        inner
+            .sessions
+            .pending
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), tx);
         let result = tokio::time::timeout(inner.config.respond_timeout, rx).await;
         inner.sessions.pending.lock().unwrap().remove(&session_id);
         matches!(result, Ok(Ok(true)))
@@ -135,7 +146,14 @@ async fn prepare_upload(
     for (id, dto) in req.files {
         let token = uuid::Uuid::new_v4().simple().to_string();
         tokens.insert(id.clone(), token.clone());
-        session_files.insert(id, SessionFile { dto, token, done: false });
+        session_files.insert(
+            id,
+            SessionFile {
+                dto,
+                token,
+                done: false,
+            },
+        );
     }
     *active = Some(ReceiveSession {
         id: session_id.clone(),
@@ -147,7 +165,11 @@ async fn prepare_upload(
     drop(active);
 
     info!("Sessão {} aceita ({} arquivo(s))", session_id, tokens.len());
-    Json(PrepareUploadResponse { session_id, files: tokens }).into_response()
+    Json(PrepareUploadResponse {
+        session_id,
+        files: tokens,
+    })
+    .into_response()
 }
 
 #[derive(Deserialize)]
@@ -289,7 +311,9 @@ async fn upload(
         path: final_path.to_string_lossy().to_string(),
     });
     if all_done {
-        inner.emit(NodeEvent::SessionFinished { session_id: q.session_id });
+        inner.emit(NodeEvent::SessionFinished {
+            session_id: q.session_id,
+        });
     }
     StatusCode::OK.into_response()
 }
@@ -304,7 +328,11 @@ async fn cancel(State(inner): State<Arc<NodeInner>>, Query(q): Query<CancelQuery
     let mut cancelled = false;
     {
         let mut guard = inner.sessions.active.lock().unwrap();
-        if guard.as_ref().map(|s| s.id == q.session_id).unwrap_or(false) {
+        if guard
+            .as_ref()
+            .map(|s| s.id == q.session_id)
+            .unwrap_or(false)
+        {
             if let Some(s) = guard.take() {
                 s.cancelled.store(true, Ordering::SeqCst);
             }
@@ -316,7 +344,9 @@ async fn cancel(State(inner): State<Arc<NodeInner>>, Query(q): Query<CancelQuery
         cancelled = true;
     }
     if cancelled {
-        inner.emit(NodeEvent::SessionCancelled { session_id: q.session_id });
+        inner.emit(NodeEvent::SessionCancelled {
+            session_id: q.session_id,
+        });
     }
     StatusCode::OK
 }

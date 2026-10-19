@@ -33,6 +33,37 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": [
+      "resources/*"
+    ],
+    "copyright": "Copyright © 2026 oFerrazDEV00. MIT License.",
+    "shortDescription": "Ducker — Be Simple, Be Duck. P2P file transfer on your local network.",
+    "longDescription": "Ducker is a peer-to-peer file and message transfer tool for local networks, implementing the LocalSend v2 protocol. No cloud servers, no accounts — just fast, secure, encrypted transfers between your devices.",
+    "licenseFile": "../../LICENSE",
+    "windows": {
+      "nsis": {
+        "installMode": "both",
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico",
+        "sidebarImage": "nsis/sidebar.bmp",
+        "headerImage": "nsis/header.bmp",
+        "installerHooks": "nsis/hooks.nsh"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1"
+        ],
+        "section": "net",
+        "desktopTemplate": null
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
   }
 }

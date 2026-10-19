@@ -7,9 +7,19 @@ pub static ERROR: Emoji<'_, '_> = Emoji("✗ ", "");
 pub static SEARCH: Emoji<'_, '_> = Emoji("🔍 ", "");
 
 pub fn print_banner() {
-    println!("{}", style("========================================").dim());
-    println!("{} {}", DUCK, style("DUCKER — Be simple, be duck.").bold().yellow());
-    println!("{}", style("========================================").dim());
+    println!(
+        "{}",
+        style("========================================").dim()
+    );
+    println!(
+        "{} {}",
+        DUCK,
+        style("DUCKER — Be simple, be duck.").bold().yellow()
+    );
+    println!(
+        "{}",
+        style("========================================").dim()
+    );
 }
 
 pub fn create_transfer_progress_bar(total_bytes: u64, file_name: &str) -> ProgressBar {

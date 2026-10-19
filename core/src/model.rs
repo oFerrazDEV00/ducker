@@ -2,8 +2,8 @@
 //! Todos os campos usam camelCase no JSON. Campos desconhecidos são ignorados pelo serde,
 //! o que garante compatibilidade com versões futuras do LocalSend.
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 pub const PROTOCOL_VERSION: &str = "2.1";
 pub const DEFAULT_PORT: u16 = 53317;
@@ -86,7 +86,11 @@ pub struct MulticastDto {
 
 impl MulticastDto {
     pub fn new(info: DeviceInfo, announce: bool) -> Self {
-        Self { info, announce: Some(announce), announcement: Some(announce) }
+        Self {
+            info,
+            announce: Some(announce),
+            announcement: Some(announce),
+        }
     }
 
     pub fn is_announce(&self) -> bool {

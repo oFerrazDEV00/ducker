@@ -29,3 +29,9 @@ desktop.ini
 *.log
 scratch/
 tmp/
+
+# Installer build artifacts (CLI binary copied during build)
+app/src-tauri/resources/ducker*
+app/src-tauri/resources/LICENSE
+dist/
+

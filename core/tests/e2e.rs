@@ -3,7 +3,9 @@
 use std::time::Duration;
 
 use ducker_core::model::{FileDto, PrepareUploadRequest, Protocol};
-use ducker_core::{client::PeerClient, DuckerError, Identity, Node, NodeConfig, NodeEvent, Peer, SendOptions};
+use ducker_core::{
+    client::PeerClient, DuckerError, Identity, Node, NodeConfig, NodeEvent, Peer, SendOptions,
+};
 use tempfile::TempDir;
 
 struct TestNode {
@@ -27,7 +29,10 @@ async fn spawn(alias: &str, auto_accept: bool, protocol: Protocol) -> TestNode {
 }
 
 async fn connect(from: &TestNode, to: &TestNode) -> Peer {
-    from.node.connect("127.0.0.1".parse().unwrap(), to.node.port()).await.unwrap()
+    from.node
+        .connect("127.0.0.1".parse().unwrap(), to.node.port())
+        .await
+        .unwrap()
 }
 
 #[tokio::test]
@@ -57,7 +62,10 @@ async fn https_transfer_with_auto_accept_and_mutual_discovery() {
 
     assert_eq!(last.load(std::sync::atomic::Ordering::SeqCst), 21);
     let saved = b.save.path().join("ola.txt");
-    assert_eq!(std::fs::read_to_string(saved).unwrap(), "Hello Ducker Network!");
+    assert_eq!(
+        std::fs::read_to_string(saved).unwrap(),
+        "Hello Ducker Network!"
+    );
 }
 
 #[tokio::test]
@@ -73,10 +81,21 @@ async fn folder_transfer_over_http() {
     std::fs::write(dir.join("1.jpg"), vec![1u8; 300_000]).unwrap();
     std::fs::write(dir.join("sub").join("2.jpg"), b"two").unwrap();
 
-    a.node.send_files(&peer_b, vec![dir], SendOptions::default(), |_| {}).await.unwrap();
+    a.node
+        .send_files(&peer_b, vec![dir], SendOptions::default(), |_| {})
+        .await
+        .unwrap();
 
-    assert_eq!(std::fs::read(b.save.path().join("fotos").join("1.jpg")).unwrap().len(), 300_000);
-    assert_eq!(std::fs::read(b.save.path().join("fotos").join("sub").join("2.jpg")).unwrap(), b"two");
+    assert_eq!(
+        std::fs::read(b.save.path().join("fotos").join("1.jpg"))
+            .unwrap()
+            .len(),
+        300_000
+    );
+    assert_eq!(
+        std::fs::read(b.save.path().join("fotos").join("sub").join("2.jpg")).unwrap(),
+        b"two"
+    );
 }
 
 #[tokio::test]
@@ -94,7 +113,12 @@ async fn manual_accept_and_reject() {
     let handle = tokio::spawn(async move {
         let mut decisions = vec![true, false];
         while let Ok(ev) = b.events.recv().await {
-            if let NodeEvent::IncomingRequest { session_id, auto_accepted, .. } = ev {
+            if let NodeEvent::IncomingRequest {
+                session_id,
+                auto_accepted,
+                ..
+            } = ev
+            {
                 assert!(!auto_accepted);
                 let accept = decisions.pop().unwrap();
                 assert!(responder.respond(&session_id, accept));
@@ -106,9 +130,15 @@ async fn manual_accept_and_reject() {
         b.save
     });
 
-    let r1 = a.node.send_files(&peer_b, vec![file.clone()], SendOptions::default(), |_| {}).await;
+    let r1 = a
+        .node
+        .send_files(&peer_b, vec![file.clone()], SendOptions::default(), |_| {})
+        .await;
     assert!(matches!(r1, Err(DuckerError::Rejected)), "{r1:?}");
-    a.node.send_files(&peer_b, vec![file], SendOptions::default(), |_| {}).await.unwrap();
+    a.node
+        .send_files(&peer_b, vec![file], SendOptions::default(), |_| {})
+        .await
+        .unwrap();
 
     let save = handle.await.unwrap();
     assert!(save.path().join("x.bin").exists());
@@ -124,14 +154,33 @@ async fn quac_mismatch_is_intercepted_and_nothing_saved() {
     let file = src.path().join("secret.txt");
     std::fs::write(&file, b"nao salvar").unwrap();
 
-    let wrong = if b.node.identity().quac_id == 99_999_999 { 10_000_000 } else { 99_999_999 };
-    let opts = SendOptions { expected_quac: Some(wrong), ..Default::default() };
-    let r = a.node.send_files(&peer_b, vec![file.clone()], opts, |_| {}).await;
-    assert!(matches!(r, Err(DuckerError::DestinationIdMismatch)), "{r:?}");
+    let wrong = if b.node.identity().quac_id == 99_999_999 {
+        10_000_000
+    } else {
+        99_999_999
+    };
+    let opts = SendOptions {
+        expected_quac: Some(wrong),
+        ..Default::default()
+    };
+    let r = a
+        .node
+        .send_files(&peer_b, vec![file.clone()], opts, |_| {})
+        .await;
+    assert!(
+        matches!(r, Err(DuckerError::DestinationIdMismatch)),
+        "{r:?}"
+    );
     assert!(!b.save.path().join("secret.txt").exists());
 
-    let ok = SendOptions { expected_quac: Some(b.node.identity().quac_id), ..Default::default() };
-    a.node.send_files(&peer_b, vec![file], ok, |_| {}).await.unwrap();
+    let ok = SendOptions {
+        expected_quac: Some(b.node.identity().quac_id),
+        ..Default::default()
+    };
+    a.node
+        .send_files(&peer_b, vec![file], ok, |_| {})
+        .await
+        .unwrap();
     assert!(b.save.path().join("secret.txt").exists());
 }
 
@@ -141,7 +190,10 @@ async fn text_message_is_delivered_as_event() {
     let mut b = spawn("B", false, Protocol::Https).await;
     let peer_b = connect(&a, &b).await;
 
-    a.node.send_text(&peer_b, "olá pato 🦆", SendOptions::default()).await.unwrap();
+    a.node
+        .send_text(&peer_b, "olá pato 🦆", SendOptions::default())
+        .await
+        .unwrap();
     let text = tokio::time::timeout(Duration::from_secs(3), async {
         loop {
             if let Ok(NodeEvent::TextReceived { text, sender }) = b.events.recv().await {
@@ -161,7 +213,15 @@ async fn checksum_mismatch_returns_422_and_deletes_file() {
     let b = spawn("B", true, Protocol::Https).await;
     let _ = connect(&a, &b).await;
 
-    let client = PeerClient::new(Protocol::Https, "127.0.0.1".parse().unwrap(), b.node.port(), None, None, None).unwrap();
+    let client = PeerClient::new(
+        Protocol::Https,
+        "127.0.0.1".parse().unwrap(),
+        b.node.port(),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
     let dto = FileDto {
         id: "f1".into(),
         file_name: "bad.txt".into(),
@@ -171,27 +231,92 @@ async fn checksum_mismatch_returns_422_and_deletes_file() {
         preview: None,
         metadata: None,
     };
-    let req = PrepareUploadRequest { info: a.node.info(), files: [("f1".to_string(), dto)].into() };
-    let resp = client.prepare_upload(&req, None, None).await.unwrap().unwrap();
+    let req = PrepareUploadRequest {
+        info: a.node.info(),
+        files: [("f1".to_string(), dto)].into(),
+    };
+    let resp = client
+        .prepare_upload(&req, None, None)
+        .await
+        .unwrap()
+        .unwrap();
     let token = resp.files.get("f1").unwrap();
-    let r = client.upload_bytes(&resp.session_id, "f1", token, b"hello".to_vec()).await;
+    let r = client
+        .upload_bytes(&resp.session_id, "f1", token, b"hello".to_vec())
+        .await;
     assert!(matches!(r, Err(DuckerError::ChecksumMismatch)), "{r:?}");
     assert!(!b.save.path().join("bad.txt").exists());
 
     // Token inválido também é recusado
-    let r2 = client.upload_bytes(&resp.session_id, "f1", "errado", b"x".to_vec()).await;
+    let r2 = client
+        .upload_bytes(&resp.session_id, "f1", "errado", b"x".to_vec())
+        .await;
     assert!(r2.is_err());
 }
 
 #[tokio::test]
 async fn info_endpoint_works() {
     let a = spawn("Pato", true, Protocol::Https).await;
-    let client = PeerClient::new(Protocol::Https, "127.0.0.1".parse().unwrap(), a.node.port(), None, Some(a.node.identity().fingerprint), None).unwrap();
+    let client = PeerClient::new(
+        Protocol::Https,
+        "127.0.0.1".parse().unwrap(),
+        a.node.port(),
+        None,
+        Some(a.node.identity().fingerprint),
+        None,
+    )
+    .unwrap();
     let info = client.info().await.unwrap();
     assert_eq!(info.alias, "Pato");
     assert_eq!(info.fingerprint, a.node.identity().fingerprint);
 
     // Pinning com fingerprint errado deve falhar
-    let bad = PeerClient::new(Protocol::Https, "127.0.0.1".parse().unwrap(), a.node.port(), None, Some("A".repeat(64)), None).unwrap();
+    let bad = PeerClient::new(
+        Protocol::Https,
+        "127.0.0.1".parse().unwrap(),
+        a.node.port(),
+        None,
+        Some("A".repeat(64)),
+        None,
+    )
+    .unwrap();
     assert!(bad.info().await.is_err());
+}
+
+#[tokio::test]
+async fn transfer_updates_duckive_progress_and_unlocks() {
+    let a = spawn("DuckiveSender", false, Protocol::Https).await;
+    let b = spawn("DuckiveReceiver", true, Protocol::Https).await;
+    let peer_b = connect(&a, &b).await;
+
+    let cfg_dir = tempfile::tempdir().unwrap();
+    let mut duckive =
+        ducker_core::DuckiveProfile::load_or_create(cfg_dir.path(), "DuckiveSender").unwrap();
+    assert_eq!(duckive.files_sent_count, 0);
+
+    let src = tempfile::tempdir().unwrap();
+    let file = src.path().join("duckive_test.txt");
+    std::fs::write(&file, b"Duckive Transfer Integration").unwrap();
+
+    a.node
+        .send_files(&peer_b, vec![file], SendOptions::default(), |_| {})
+        .await
+        .unwrap();
+
+    let summary = duckive.record_transfer(1, 28, false, 1.5, false);
+    duckive.save(cfg_dir.path()).unwrap();
+
+    assert_eq!(duckive.files_sent_count, 1);
+    assert_eq!(summary.newly_unlocked_achievements.len(), 1);
+    assert_eq!(summary.newly_unlocked_achievements[0].id, "first_flight");
+
+    // Recarregar do disco e verificar persistência
+    let reloaded = ducker_core::DuckiveProfile::load(cfg_dir.path())
+        .unwrap()
+        .unwrap();
+    assert_eq!(reloaded.files_sent_count, 1);
+    assert!(reloaded
+        .achievements
+        .iter()
+        .any(|ach| ach.id == "first_flight" && ach.unlocked));
 }

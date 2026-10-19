@@ -6,15 +6,25 @@
 
 pub mod client;
 pub mod discovery;
+pub mod duckive;
 pub mod error;
 pub mod identity;
 pub mod model;
 pub mod node;
+mod server;
 pub mod session;
 pub mod tls;
-mod server;
 
+pub use duckive::{
+    get_achievements_catalog, get_cosmetics_catalog, AchievementDefinition, AchievementState,
+    AdminPermissions, AdminSession, CosmeticCategory, CosmeticItem, CosmeticItemStatus,
+    DuckiveProfile, DuckiveView, EquippedItems, LevelInfo, Rarity, UnlockRequirement,
+    UnlockSummary, DUCKIVE_FILE,
+};
 pub use error::{DuckerError, Result};
 pub use identity::{default_alias, Identity};
 pub use model::{DeviceInfo, DeviceType, FileDto, Protocol, DEFAULT_PORT, PROTOCOL_VERSION};
-pub use node::{default_save_dir, Node, NodeConfig, NodeEvent, Peer, SendOptions, SendProgress};
+pub use node::{
+    collect_files, count_files_and_bytes, default_save_dir, Node, NodeConfig, NodeEvent, Peer,
+    SendOptions, SendProgress,
+};

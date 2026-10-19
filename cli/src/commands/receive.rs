@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use crate::ui::{create_transfer_progress_bar, DUCK, ERROR, SUCCESS};
 use console::style;
 use dialoguer::Confirm;
 use ducker_core::{default_save_dir, Identity, Node, NodeConfig, NodeEvent};
-use crate::ui::{create_transfer_progress_bar, DUCK, ERROR, SUCCESS};
+use std::path::PathBuf;
 
 pub async fn execute(
     identity: &Identity,
@@ -29,24 +29,51 @@ pub async fn execute(
         }
     };
 
-    println!("\n{} {}", DUCK, style("Ducker está pronto e ouvindo na rede local!").bold().yellow());
+    println!(
+        "\n{} {}",
+        DUCK,
+        style("Ducker está pronto e ouvindo na rede local!")
+            .bold()
+            .yellow()
+    );
     println!("  Dispositivo:  {}", style(&identity.alias).cyan().bold());
     println!("  ID Quac:      {}", style(identity.quac_id).green().bold());
-    println!("  Fingerprint:  {}", style(&identity.fingerprint[..12]).dim());
-    println!("  Porta:        {} ({})", style(node.port()).bold(), node.config().protocol.scheme());
+    println!(
+        "  Fingerprint:  {}",
+        style(&identity.fingerprint[..12]).dim()
+    );
+    println!(
+        "  Porta:        {} ({})",
+        style(node.port()).bold(),
+        node.config().protocol.scheme()
+    );
     println!("  Pasta Destino:{}", style(save_dir.display()).dim());
     if auto_accept {
-        println!("  Modo:         {}", style("Aceite automático ATIVADO (--yes)").green());
+        println!(
+            "  Modo:         {}",
+            style("Aceite automático ATIVADO (--yes)").green()
+        );
     } else {
-        println!("  Modo:         {}", style("Confirmação interativa no terminal").yellow());
+        println!(
+            "  Modo:         {}",
+            style("Confirmação interativa no terminal").yellow()
+        );
     }
-    println!("\n{}", style("Aguardando conexões... Pressione Ctrl+C para encerrar.").dim());
+    println!(
+        "\n{}",
+        style("Aguardando conexões... Pressione Ctrl+C para encerrar.").dim()
+    );
 
     let mut current_pb: Option<indicatif::ProgressBar> = None;
 
     while let Ok(event) = events.recv().await {
         match event {
-            NodeEvent::IncomingRequest { session_id, sender, files, auto_accepted } => {
+            NodeEvent::IncomingRequest {
+                session_id,
+                sender,
+                files,
+                auto_accepted,
+            } => {
                 let total_size: u64 = files.iter().map(|f| f.size).sum();
                 let count = files.len();
                 let file_names: Vec<&str> = files.iter().map(|f| f.file_name.as_str()).collect();
@@ -55,7 +82,12 @@ pub async fn execute(
                     "\n{} Pedido de transferência de {} [fp: {}]:",
                     style("➤").cyan().bold(),
                     style(&sender.alias).cyan().bold(),
-                    style(if sender.fingerprint.len() >= 8 { &sender.fingerprint[..8] } else { "n/a" }).dim()
+                    style(if sender.fingerprint.len() >= 8 {
+                        &sender.fingerprint[..8]
+                    } else {
+                        "n/a"
+                    })
+                    .dim()
                 );
                 println!(
                     "  {} arquivo(s) ({:.2} MB): {}",
@@ -81,12 +113,20 @@ pub async fn execute(
                     }
                 }
             }
-            NodeEvent::ReceiveProgress { file_id: _, received, total, .. } => {
-                let pb = current_pb.get_or_insert_with(|| create_transfer_progress_bar(total, "arquivo"));
+            NodeEvent::ReceiveProgress {
+                file_id: _,
+                received,
+                total,
+                ..
+            } => {
+                let pb = current_pb
+                    .get_or_insert_with(|| create_transfer_progress_bar(total, "arquivo"));
                 pb.set_length(total);
                 pb.set_position(received);
             }
-            NodeEvent::FileReceived { file_name, path, .. } => {
+            NodeEvent::FileReceived {
+                file_name, path, ..
+            } => {
                 if let Some(pb) = current_pb.take() {
                     pb.finish_and_clear();
                 }
@@ -94,9 +134,21 @@ pub async fn execute(
                     "{} Arquivo '{}' salvo com sucesso em:\n  {}",
                     SUCCESS,
                     style(&file_name).bold(),
-                    style(path).dim()
+                    style(&path).dim()
                 );
+
+                // Atualiza contadores do Duckive
+                let file_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                let config_dir =
+                    Identity::default_config_dir().unwrap_or_else(|_| PathBuf::from("."));
+                if let Ok(mut profile) =
+                    ducker_core::DuckiveProfile::load_or_create(&config_dir, &identity.alias)
+                {
+                    profile.record_files_received(1, file_bytes);
+                    let _ = profile.save(&config_dir);
+                }
             }
+
             NodeEvent::TextReceived { sender, text } => {
                 println!(
                     "\n{} Mensagem recebida de {}:\n  {}",

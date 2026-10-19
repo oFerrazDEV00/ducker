@@ -26,8 +26,9 @@ fn provider() -> Arc<CryptoProvider> {
 
 /// Gera um par (cert_pem, key_pem) autoassinado.
 pub fn generate_self_signed() -> Result<(String, String)> {
-    let ck = rcgen::generate_simple_self_signed(vec!["localsend".to_string(), "ducker".to_string()])
-        .map_err(|e| DuckerError::Tls(e.to_string()))?;
+    let ck =
+        rcgen::generate_simple_self_signed(vec!["localsend".to_string(), "ducker".to_string()])
+            .map_err(|e| DuckerError::Tls(e.to_string()))?;
     Ok((ck.cert.pem(), ck.key_pair.serialize_pem()))
 }
 
@@ -43,8 +44,8 @@ fn parse_cert_der(cert_pem: &str) -> Result<CertificateDer<'static>> {
 
 fn parse_key_der(key_pem: &str) -> Result<PrivateKeyDer<'static>> {
     let mut reader = std::io::BufReader::new(key_pem.as_bytes());
-    let key_opt = rustls_pemfile::private_key(&mut reader)
-        .map_err(|e| DuckerError::Tls(e.to_string()))?;
+    let key_opt =
+        rustls_pemfile::private_key(&mut reader).map_err(|e| DuckerError::Tls(e.to_string()))?;
     key_opt.ok_or_else(|| DuckerError::Tls("PEM sem chave privada".into()))
 }
 
@@ -106,7 +107,12 @@ impl ServerCertVerifier for FingerprintVerifier {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls12_signature(message, cert, dss, &self.provider.signature_verification_algorithms)
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
     }
 
     fn verify_tls13_signature(
@@ -115,11 +121,18 @@ impl ServerCertVerifier for FingerprintVerifier {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls13_signature(message, cert, dss, &self.provider.signature_verification_algorithms)
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
     }
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.provider.signature_verification_algorithms.supported_schemes()
+        self.provider
+            .signature_verification_algorithms
+            .supported_schemes()
     }
 }
 

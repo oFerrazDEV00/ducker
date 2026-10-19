@@ -1,10 +1,14 @@
-use std::time::Duration;
+use crate::ui::SEARCH;
 use console::style;
 use ducker_core::{default_save_dir, Identity, Node, NodeConfig};
-use crate::ui::SEARCH;
+use std::time::Duration;
 
 pub async fn execute(identity: &Identity, run_scan: bool) {
-    println!("\n{} {}", SEARCH, style("Buscando dispositivos na rede local (LocalSend / Ducker)...").bold());
+    println!(
+        "\n{} {}",
+        SEARCH,
+        style("Buscando dispositivos na rede local (LocalSend / Ducker)...").bold()
+    );
 
     let mut config = NodeConfig::new(identity.clone(), default_save_dir());
     config.port = 0; // porta efêmera para listagem rápida
@@ -33,13 +37,20 @@ pub async fn execute(identity: &Identity, run_scan: bool) {
         println!("\nNenhum outro dispositivo encontrado no momento.");
         println!("{}", style("Dica: Certifique-se de que os outros dispositivos estão na mesma rede Wi-Fi/LAN com o Ducker ou LocalSend aberto.").dim());
         if !run_scan {
-            println!("{}", style("Você pode tentar buscar forçando scan com: ducker devices --scan").cyan());
+            println!(
+                "{}",
+                style("Você pode tentar buscar forçando scan com: ducker devices --scan").cyan()
+            );
         }
     } else {
         println!("\n{}", style("Dispositivos encontrados:").bold());
         for (idx, peer) in peers.iter().enumerate() {
             let model = peer.info.device_model.as_deref().unwrap_or("Dispositivo");
-            let dev_type = peer.info.device_type.map(|t| format!("{:?}", t)).unwrap_or_else(|| "Desktop".into());
+            let dev_type = peer
+                .info
+                .device_type
+                .map(|t| format!("{:?}", t))
+                .unwrap_or_else(|| "Desktop".into());
             let quac_str = if let Some(quac) = peer.info.quac_id {
                 format!(" [Quac: {}]", style(quac).green().bold())
             } else {

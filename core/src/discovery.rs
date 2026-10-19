@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use socket2::{Domain, Socket, SockRef, Type};
+use socket2::{Domain, SockRef, Socket, Type};
 use tokio::net::UdpSocket;
 use tracing::{debug, info, warn};
 
@@ -80,7 +80,9 @@ pub(crate) async fn start(inner: Arc<NodeInner>) -> Result<()> {
 pub(crate) async fn announce(inner: &Arc<NodeInner>, is_announce: bool) {
     let Some(udp) = inner.udp.get() else { return };
     let dto = MulticastDto::new(inner.device_info(), is_announce);
-    let Ok(bytes) = serde_json::to_vec(&dto) else { return };
+    let Ok(bytes) = serde_json::to_vec(&dto) else {
+        return;
+    };
     let mcast_target = SocketAddr::from((inner.config.multicast_addr, inner.config.multicast_port));
     let bcast_target = SocketAddr::from((Ipv4Addr::BROADCAST, inner.config.multicast_port));
     let ifaces = local_ipv4s();
@@ -100,7 +102,8 @@ pub(crate) async fn announce(inner: &Arc<NodeInner>, is_announce: bool) {
         }
         // Broadcast dirigido da sub-rede /24 (crucial para Android e redes Wi-Fi com isolamento/filtro IGMP)
         let [a, b, c, _] = ip.octets();
-        let subnet_bcast = SocketAddr::from((Ipv4Addr::new(a, b, c, 255), inner.config.multicast_port));
+        let subnet_bcast =
+            SocketAddr::from((Ipv4Addr::new(a, b, c, 255), inner.config.multicast_port));
         let _ = udp.send_to(&bytes, subnet_bcast).await;
     }
 }
@@ -117,9 +120,13 @@ async fn listen_loop(inner: Arc<NodeInner>, udp: Arc<UdpSocket>) {
                 continue;
             }
         };
-        let Ok(dto) = serde_json::from_slice::<MulticastDto>(&buf[..n]) else { continue };
+        let Ok(dto) = serde_json::from_slice::<MulticastDto>(&buf[..n]) else {
+            continue;
+        };
         let is_announce = dto.is_announce();
-        let Some(peer) = inner.add_peer_from_info(dto.info, src.ip()) else { continue };
+        let Some(peer) = inner.add_peer_from_info(dto.info, src.ip()) else {
+            continue;
+        };
         if is_announce {
             let inner = inner.clone();
             tokio::spawn(async move { respond_to_announce(inner, peer).await });
@@ -132,7 +139,14 @@ async fn respond_to_announce(inner: Arc<NodeInner>, peer: Peer) {
     let me = inner.device_info();
     let id = inner.identity();
     let cert_key = (id.cert_pem.as_str(), id.key_pem.as_str());
-    let mut result = match PeerClient::new(peer.protocol, peer.ip, peer.port, Some(cert_key), None, Some(Duration::from_secs(3))) {
+    let mut result = match PeerClient::new(
+        peer.protocol,
+        peer.ip,
+        peer.port,
+        Some(cert_key),
+        None,
+        Some(Duration::from_secs(3)),
+    ) {
         Ok(client) => client.register(&me).await,
         Err(e) => Err(e),
     };
@@ -140,7 +154,14 @@ async fn respond_to_announce(inner: Arc<NodeInner>, peer: Peer) {
     // Fallback: se falhar pelo protocolo padrão (ex: HTTPS), tenta pelo protocolo alternativo (HTTP)
     if result.is_err() {
         let alt = other(peer.protocol);
-        if let Ok(alt_client) = PeerClient::new(alt, peer.ip, peer.port, Some(cert_key), None, Some(Duration::from_secs(3))) {
+        if let Ok(alt_client) = PeerClient::new(
+            alt,
+            peer.ip,
+            peer.port,
+            Some(cert_key),
+            None,
+            Some(Duration::from_secs(3)),
+        ) {
             if let Ok(info) = alt_client.register(&me).await {
                 result = Ok(info);
             }
@@ -152,7 +173,10 @@ async fn respond_to_announce(inner: Arc<NodeInner>, peer: Peer) {
             inner.add_peer_from_info(info, peer.ip);
         }
         Err(e) => {
-            debug!("register em {} falhou ({e}); respondendo via UDP unicast e broadcast", peer.ip);
+            debug!(
+                "register em {} falhou ({e}); respondendo via UDP unicast e broadcast",
+                peer.ip
+            );
             if let Some(udp) = inner.udp.get() {
                 let dto = MulticastDto::new(inner.device_info(), false);
                 if let Ok(bytes) = serde_json::to_vec(&dto) {
@@ -200,7 +224,14 @@ pub(crate) async fn scan_subnet(inner: Arc<NodeInner>) -> usize {
             async move {
                 let cert_key = (cert_pair.0.as_str(), cert_pair.1.as_str());
                 for proto in [protocol, other(protocol)] {
-                    let Ok(client) = PeerClient::new(proto, IpAddr::V4(ip), port, Some(cert_key), None, Some(Duration::from_millis(1500))) else {
+                    let Ok(client) = PeerClient::new(
+                        proto,
+                        IpAddr::V4(ip),
+                        port,
+                        Some(cert_key),
+                        None,
+                        Some(Duration::from_millis(1500)),
+                    ) else {
                         return;
                     };
                     if let Ok(mut info) = client.register(&me).await {

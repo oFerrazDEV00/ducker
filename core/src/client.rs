@@ -43,7 +43,12 @@ impl PeerClient {
             builder = builder.timeout(t);
         }
         let http = builder.build()?;
-        let base = format!("{}://{}{}", protocol.scheme(), SocketAddr::new(ip, port), API_PREFIX);
+        let base = format!(
+            "{}://{}{}",
+            protocol.scheme(),
+            SocketAddr::new(ip, port),
+            API_PREFIX
+        );
         Ok(Self { http, base })
     }
 
@@ -60,15 +65,26 @@ impl PeerClient {
             .await
             .map_err(Self::conn_err)?;
         if !resp.status().is_success() {
-            return Err(DuckerError::ConnectionFailed(format!("register retornou HTTP {}", resp.status())));
+            return Err(DuckerError::ConnectionFailed(format!(
+                "register retornou HTTP {}",
+                resp.status()
+            )));
         }
         Ok(resp.json().await?)
     }
 
     pub async fn info(&self) -> Result<DeviceInfo> {
-        let resp = self.http.get(format!("{}/info", self.base)).send().await.map_err(Self::conn_err)?;
+        let resp = self
+            .http
+            .get(format!("{}/info", self.base))
+            .send()
+            .await
+            .map_err(Self::conn_err)?;
         if !resp.status().is_success() {
-            return Err(DuckerError::ConnectionFailed(format!("info retornou HTTP {}", resp.status())));
+            return Err(DuckerError::ConnectionFailed(format!(
+                "info retornou HTTP {}",
+                resp.status()
+            )));
         }
         Ok(resp.json().await?)
     }
@@ -108,7 +124,9 @@ impl PeerClient {
                 }
             }
             409 => Err(DuckerError::Busy),
-            s => Err(DuckerError::TransferFailed(format!("prepare-upload retornou HTTP {s}"))),
+            s => Err(DuckerError::TransferFailed(format!(
+                "prepare-upload retornou HTTP {s}"
+            ))),
         }
     }
 
@@ -118,7 +136,9 @@ impl PeerClient {
             403 => Err(DuckerError::TransferFailed("token ou IP inválido".into())),
             409 => Err(DuckerError::Busy),
             422 => Err(DuckerError::ChecksumMismatch),
-            s => Err(DuckerError::TransferFailed(format!("upload retornou HTTP {s}"))),
+            s => Err(DuckerError::TransferFailed(format!(
+                "upload retornou HTTP {s}"
+            ))),
         }
     }
 
@@ -135,7 +155,8 @@ impl PeerClient {
         let sent = Arc::new(AtomicU64::new(0));
         let stream = ReaderStream::with_capacity(file, CHUNK).map(move |chunk| {
             if let Ok(bytes) = &chunk {
-                let total = sent.fetch_add(bytes.len() as u64, Ordering::SeqCst) + bytes.len() as u64;
+                let total =
+                    sent.fetch_add(bytes.len() as u64, Ordering::SeqCst) + bytes.len() as u64;
                 progress(total);
             }
             chunk
@@ -143,7 +164,11 @@ impl PeerClient {
         let resp = self
             .http
             .post(format!("{}/upload", self.base))
-            .query(&[("sessionId", session_id), ("fileId", file_id), ("token", token)])
+            .query(&[
+                ("sessionId", session_id),
+                ("fileId", file_id),
+                ("token", token),
+            ])
             .header(CONTENT_LENGTH, size)
             .body(reqwest::Body::wrap_stream(stream))
             .send()
@@ -152,11 +177,21 @@ impl PeerClient {
         Self::finish_upload(resp).await
     }
 
-    pub async fn upload_bytes(&self, session_id: &str, file_id: &str, token: &str, data: Vec<u8>) -> Result<()> {
+    pub async fn upload_bytes(
+        &self,
+        session_id: &str,
+        file_id: &str,
+        token: &str,
+        data: Vec<u8>,
+    ) -> Result<()> {
         let resp = self
             .http
             .post(format!("{}/upload", self.base))
-            .query(&[("sessionId", session_id), ("fileId", file_id), ("token", token)])
+            .query(&[
+                ("sessionId", session_id),
+                ("fileId", file_id),
+                ("token", token),
+            ])
             .body(data)
             .send()
             .await

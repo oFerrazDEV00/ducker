@@ -58,8 +58,9 @@ impl Identity {
     }
 
     pub fn default_config_dir() -> Result<PathBuf> {
-        let home = dirs::home_dir()
-            .ok_or_else(|| DuckerError::Custom("Não foi possível localizar o diretório do usuário.".into()))?;
+        let home = dirs::home_dir().ok_or_else(|| {
+            DuckerError::Custom("Não foi possível localizar o diretório do usuário.".into())
+        })?;
         Ok(home.join(".ducker"))
     }
 

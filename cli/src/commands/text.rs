@@ -1,14 +1,10 @@
-use std::time::Duration;
+use crate::ui::{ERROR, SEARCH, SUCCESS};
 use console::style;
 use dialoguer::Select;
 use ducker_core::{default_save_dir, Identity, Node, NodeConfig, Peer, SendOptions};
-use crate::ui::{ERROR, SEARCH, SUCCESS};
+use std::time::Duration;
 
-pub async fn execute(
-    identity: &Identity,
-    text: String,
-    to_query: Option<String>,
-) {
+pub async fn execute(identity: &Identity, text: String, to_query: Option<String>) {
     if text.trim().is_empty() {
         eprintln!("{} Mensagem de texto não pode ser vazia.", ERROR);
         return;
@@ -26,7 +22,11 @@ pub async fn execute(
         }
     };
 
-    println!("\n{} {}", SEARCH, style("Localizando destinatário para mensagem...").bold());
+    println!(
+        "\n{} {}",
+        SEARCH,
+        style("Localizando destinatário para mensagem...").bold()
+    );
 
     let target_peer: Peer = if let Some(ref q) = to_query {
         if let Ok(addr) = q.parse::<std::net::SocketAddr>() {
@@ -56,7 +56,10 @@ pub async fn execute(
                     match node.find_peer(q) {
                         Some(p) => p,
                         None => {
-                            eprintln!("{} Destinatário '{}' não encontrado na rede local.", ERROR, q);
+                            eprintln!(
+                                "{} Destinatário '{}' não encontrado na rede local.",
+                                ERROR, q
+                            );
                             node.shutdown();
                             return;
                         }
@@ -81,8 +84,17 @@ pub async fn execute(
         let items: Vec<String> = peers
             .iter()
             .map(|p| {
-                let quac = p.info.quac_id.map(|q| format!(" [Quac: {}]", q)).unwrap_or_default();
-                format!("{} {}{}", p.info.alias, quac, format!(" ({}:{})", p.ip, p.port))
+                let quac = p
+                    .info
+                    .quac_id
+                    .map(|q| format!(" [Quac: {}]", q))
+                    .unwrap_or_default();
+                format!(
+                    "{} {}{}",
+                    p.info.alias,
+                    quac,
+                    format!(" ({}:{})", p.ip, p.port)
+                )
             })
             .collect();
 
@@ -118,10 +130,43 @@ pub async fn execute(
 
     match result {
         Ok(()) => {
-            println!("\n{} {}", SUCCESS, style("Mensagem enviada com sucesso!").green().bold());
+            println!(
+                "\n{} {}",
+                SUCCESS,
+                style("Mensagem enviada com sucesso!").green().bold()
+            );
+
+            let config_dir =
+                Identity::default_config_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            if let Ok(mut profile) =
+                ducker_core::DuckiveProfile::load_or_create(&config_dir, &identity.alias)
+            {
+                let summary = profile.record_transfer(1, text.len() as u64, false, 0.0, true);
+                let _ = profile.save(&config_dir);
+
+                for item in summary.newly_unlocked_items {
+                    println!(
+                        "\n{} {} Novo Cosmético Desbloqueado: {}!",
+                        crate::ui::DUCK,
+                        style("NOVO ITEM!").yellow().bold(),
+                        style(&item.name).cyan().bold()
+                    );
+                }
+                for ach in summary.newly_unlocked_achievements {
+                    println!(
+                        "🏆 {} Conquista Desbloqueada: {}!",
+                        style("CONQUISTA!").yellow().bold(),
+                        style(&ach.title).green().bold()
+                    );
+                }
+            }
         }
         Err(e) => {
-            eprintln!("\n{} Falha no envio da mensagem: {}", ERROR, style(e.to_string()).red().bold());
+            eprintln!(
+                "\n{} Falha no envio da mensagem: {}",
+                ERROR,
+                style(e.to_string()).red().bold()
+            );
         }
     }
 }

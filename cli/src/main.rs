@@ -1,10 +1,11 @@
-use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use console::style;
 use dialoguer::Input;
 use ducker_core::{default_alias, Identity};
+use std::path::PathBuf;
 
 mod commands;
+mod tui;
 mod ui;
 
 #[derive(Parser)]
@@ -88,6 +89,26 @@ enum Commands {
     },
     /// Executa o diagnóstico de rede, portas e certificados
     Doctor,
+    /// Visualiza o seu Duckive, progresso, inventário de cosméticos e conquistas
+    Duckive {
+        /// Equipar um item cosmético pelo ID
+        #[arg(long)]
+        equip: Option<String>,
+        /// Renomear o seu Duckive
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Alias para 'duckive': veja seu mascote e conquistas
+    Profile {
+        /// Equipar um item cosmético pelo ID
+        #[arg(long)]
+        equip: Option<String>,
+        /// Renomear o seu Duckive
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Abre a interface gráfica desktop (Ducker App)
+    Open,
 }
 
 #[tokio::main]
@@ -106,7 +127,7 @@ async fn main() {
         }
     };
 
-    if identity.is_none() && !matches!(cli.command, Some(Commands::Doctor)) {
+    if identity.is_none() && !matches!(cli.command, Some(Commands::Doctor) | Some(Commands::Open)) {
         ui::print_banner();
         println!("\nBem-vindo ao {}!\n", style("Ducker").yellow().bold());
 
@@ -152,8 +173,18 @@ async fn main() {
                 commands::text::execute(id, message, to).await;
             }
         }
-        Some(Commands::Serve { save_dir, port, yes, pin })
-        | Some(Commands::Receive { save_dir, port, yes, pin }) => {
+        Some(Commands::Serve {
+            save_dir,
+            port,
+            yes,
+            pin,
+        })
+        | Some(Commands::Receive {
+            save_dir,
+            port,
+            yes,
+            pin,
+        }) => {
             if let Some(id) = identity.as_ref() {
                 commands::receive::execute(id, save_dir, port, yes, pin).await;
             }
@@ -171,10 +202,28 @@ async fn main() {
         Some(Commands::Doctor) => {
             commands::doctor::execute(identity.as_ref());
         }
-        None => {
-            // Sem argumentos: executa o receptor em modo interativo
+        Some(Commands::Duckive { equip, name }) | Some(Commands::Profile { equip, name }) => {
             if let Some(id) = identity.as_ref() {
-                commands::receive::execute(id, None, None, false, None).await;
+                commands::duckive::execute(id, &config_dir, equip, name);
+            }
+        }
+        Some(Commands::Open) => {
+            if let Err(e) = commands::open::run() {
+                eprintln!("Erro ao abrir interface visual: {}", e);
+            }
+        }
+        None => {
+            // Sem argumentos: se for um terminal interativo (TTY), abre a TUI interativa completa do Ducker;
+            // caso contrário (pipes, redirecionamento ou automação), executa o receptor em linha de comando.
+            if let Some(id) = identity.as_ref() {
+                use std::io::IsTerminal;
+                if std::io::stdout().is_terminal() {
+                    if let Err(e) = tui::run(id, &config_dir).await {
+                        eprintln!("Erro ao executar interface de terminal: {}", e);
+                    }
+                } else {
+                    commands::receive::execute(id, None, None, false, None).await;
+                }
             }
         }
     }

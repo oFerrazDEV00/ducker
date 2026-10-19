@@ -24,7 +24,9 @@ pub enum DuckerError {
     #[error("Falha na verificação de integridade (SHA-256) do arquivo. (CHECKSUM_MISMATCH)")]
     ChecksumMismatch,
 
-    #[error("A impressão digital (fingerprint) do certificado não confere. (FINGERPRINT_MISMATCH)")]
+    #[error(
+        "A impressão digital (fingerprint) do certificado não confere. (FINGERPRINT_MISMATCH)"
+    )]
     FingerprintMismatch,
 
     #[error("Falha durante a transferência do arquivo: {0} (TRANSFER_FAILED)")]

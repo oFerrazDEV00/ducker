@@ -108,13 +108,29 @@ impl Peer {
         self.info.quac_id.is_some()
     }
 
-    fn client(&self, client_cert_key: Option<(&str, &str)>, timeout: Option<Duration>) -> Result<PeerClient> {
+    fn client(
+        &self,
+        client_cert_key: Option<(&str, &str)>,
+        timeout: Option<Duration>,
+    ) -> Result<PeerClient> {
         // Pinning estrito só entre nós Ducker (mesmo algoritmo de fingerprint garantido).
-        let pin = (self.protocol == Protocol::Https && self.is_ducker()).then(|| self.info.fingerprint.clone());
-        PeerClient::new(self.protocol, self.ip, self.port, client_cert_key, pin, timeout)
+        let pin = (self.protocol == Protocol::Https && self.is_ducker())
+            .then(|| self.info.fingerprint.clone());
+        PeerClient::new(
+            self.protocol,
+            self.ip,
+            self.port,
+            client_cert_key,
+            pin,
+            timeout,
+        )
     }
 
-    fn fallback_client(&self, client_cert_key: Option<(&str, &str)>, timeout: Option<Duration>) -> Option<PeerClient> {
+    fn fallback_client(
+        &self,
+        client_cert_key: Option<(&str, &str)>,
+        timeout: Option<Duration>,
+    ) -> Option<PeerClient> {
         let alt = match self.protocol {
             Protocol::Https => Protocol::Http,
             Protocol::Http => Protocol::Https,
@@ -125,16 +141,44 @@ impl Peer {
 
 /// Eventos emitidos pelo nó (para CLI/UI).
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum NodeEvent {
-    PeerDiscovered { peer: Peer },
+    PeerDiscovered {
+        peer: Peer,
+    },
     /// Pedido de envio recebido. Se `auto_accepted == false`, chame `Node::respond`.
-    IncomingRequest { session_id: String, sender: DeviceInfo, files: Vec<FileDto>, auto_accepted: bool },
-    TextReceived { sender: DeviceInfo, text: String },
-    ReceiveProgress { session_id: String, file_id: String, received: u64, total: u64 },
-    FileReceived { session_id: String, file_id: String, file_name: String, path: String },
-    SessionFinished { session_id: String },
-    SessionCancelled { session_id: String },
+    IncomingRequest {
+        session_id: String,
+        sender: DeviceInfo,
+        files: Vec<FileDto>,
+        auto_accepted: bool,
+    },
+    TextReceived {
+        sender: DeviceInfo,
+        text: String,
+    },
+    ReceiveProgress {
+        session_id: String,
+        file_id: String,
+        received: u64,
+        total: u64,
+    },
+    FileReceived {
+        session_id: String,
+        file_id: String,
+        file_name: String,
+        path: String,
+    },
+    SessionFinished {
+        session_id: String,
+    },
+    SessionCancelled {
+        session_id: String,
+    },
 }
 
 /// Progresso de envio.
@@ -167,7 +211,10 @@ pub(crate) struct NodeInner {
 }
 
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 impl NodeInner {
@@ -215,7 +262,10 @@ impl NodeInner {
         };
         let is_new = {
             let mut peers = self.peers.write().unwrap();
-            let changed = peers.get(&key).map(|p| p.info != peer.info || p.ip != peer.ip).unwrap_or(true);
+            let changed = peers
+                .get(&key)
+                .map(|p| p.info != peer.info || p.ip != peer.ip)
+                .unwrap_or(true);
             peers.insert(key, peer.clone());
             changed
         };
@@ -242,7 +292,10 @@ impl Node {
         let listener = match std::net::TcpListener::bind((Ipv4Addr::UNSPECIFIED, config.port)) {
             Ok(l) => l,
             Err(e) => {
-                warn!("Porta padrão {} ocupada ({e}); usando porta dinâmica...", config.port);
+                warn!(
+                    "Porta padrão {} ocupada ({e}); usando porta dinâmica...",
+                    config.port
+                );
                 std::net::TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0)).map_err(|e2| {
                     DuckerError::ConnectionFailed(format!(
                         "não foi possível abrir a porta {} nem porta alternativa: {e2}",
@@ -266,12 +319,15 @@ impl Node {
         });
 
         let handle = axum_server::Handle::new();
-        let app = crate::server::router(inner.clone()).into_make_service_with_connect_info::<SocketAddr>();
+        let app = crate::server::router(inner.clone())
+            .into_make_service_with_connect_info::<SocketAddr>();
         match inner.config.protocol {
             Protocol::Https => {
                 let id = inner.identity();
-                let rustls_cfg = RustlsConfig::from_config(tls::server_config(&id.cert_pem, &id.key_pem)?);
-                let server = axum_server::from_tcp_rustls(listener, rustls_cfg).handle(handle.clone());
+                let rustls_cfg =
+                    RustlsConfig::from_config(tls::server_config(&id.cert_pem, &id.key_pem)?);
+                let server =
+                    axum_server::from_tcp_rustls(listener, rustls_cfg).handle(handle.clone());
                 tokio::spawn(async move {
                     if let Err(e) = server.serve(app).await {
                         error!("Servidor HTTPS encerrado com erro: {e}");
@@ -290,11 +346,19 @@ impl Node {
 
         if inner.config.enable_discovery {
             if let Err(e) = discovery::start(inner.clone()).await {
-                warn!("Descoberta multicast indisponível ({e}); use scan_subnet() ou conexão por IP.");
+                warn!(
+                    "Descoberta multicast indisponível ({e}); use scan_subnet() ou conexão por IP."
+                );
             }
         }
 
-        Ok((Node { inner, server: handle }, rx))
+        Ok((
+            Node {
+                inner,
+                server: handle,
+            },
+            rx,
+        ))
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<NodeEvent> {
@@ -330,7 +394,12 @@ impl Node {
     /// Peers conhecidos, ordenados por apelido.
     pub fn peers(&self) -> Vec<Peer> {
         let mut v: Vec<Peer> = self.inner.peers.read().unwrap().values().cloned().collect();
-        v.sort_by(|a, b| a.info.alias.to_lowercase().cmp(&b.info.alias.to_lowercase()));
+        v.sort_by(|a, b| {
+            a.info
+                .alias
+                .to_lowercase()
+                .cmp(&b.info.alias.to_lowercase())
+        });
         v
     }
 
@@ -362,14 +431,24 @@ impl Node {
         let cert_key = (id.cert_pem.as_str(), id.key_pem.as_str());
         let mut last_err = DuckerError::DeviceNotFound;
         for proto in [Protocol::Https, Protocol::Http] {
-            let client = PeerClient::new(proto, ip, port, Some(cert_key), None, Some(Duration::from_secs(5)))?;
+            let client = PeerClient::new(
+                proto,
+                ip,
+                port,
+                Some(cert_key),
+                None,
+                Some(Duration::from_secs(5)),
+            )?;
             match client.register(&me).await {
                 Ok(mut info) => {
                     info.port.get_or_insert(port);
                     info.protocol.get_or_insert(proto);
-                    return self.inner.add_peer_from_info(info, ip).ok_or(DuckerError::Custom(
-                        "Esse endereço é o próprio dispositivo.".into(),
-                    ));
+                    return self
+                        .inner
+                        .add_peer_from_info(info, ip)
+                        .ok_or(DuckerError::Custom(
+                            "Esse endereço é o próprio dispositivo.".into(),
+                        ));
                 }
                 Err(e) => last_err = e,
             }
@@ -394,18 +473,32 @@ impl Node {
             return Some(p.clone());
         }
         if q.len() >= 6 {
-            if let Some(p) = peers.iter().find(|p| p.info.fingerprint.to_lowercase().starts_with(&ql)) {
+            if let Some(p) = peers
+                .iter()
+                .find(|p| p.info.fingerprint.to_lowercase().starts_with(&ql))
+            {
                 return Some(p.clone());
             }
         }
-        if let Some(p) = peers.iter().find(|p| p.ip.to_string() == q || format!("{}:{}", p.ip, p.port) == q) {
+        if let Some(p) = peers
+            .iter()
+            .find(|p| p.ip.to_string() == q || format!("{}:{}", p.ip, p.port) == q)
+        {
             return Some(p.clone());
         }
-        peers.into_iter().find(|p| p.info.alias.to_lowercase().contains(&ql))
+        peers
+            .into_iter()
+            .find(|p| p.info.alias.to_lowercase().contains(&ql))
     }
 
     /// Envia arquivos (ou pastas, recursivamente) para um peer.
-    pub async fn send_files<F>(&self, peer: &Peer, paths: Vec<PathBuf>, opts: SendOptions, on_progress: F) -> Result<()>
+    pub async fn send_files<F>(
+        &self,
+        peer: &Peer,
+        paths: Vec<PathBuf>,
+        opts: SendOptions,
+        on_progress: F,
+    ) -> Result<()>
     where
         F: Fn(SendProgress) + Send + Sync + 'static,
     {
@@ -426,7 +519,10 @@ impl Node {
                 id: id.clone(),
                 file_name: rel,
                 size,
-                file_type: mime_guess::from_path(&abs).first_or_octet_stream().essence_str().to_string(),
+                file_type: mime_guess::from_path(&abs)
+                    .first_or_octet_stream()
+                    .essence_str()
+                    .to_string(),
                 sha256: None,
                 preview: None,
                 metadata: None,
@@ -440,14 +536,23 @@ impl Node {
         let id = self.inner.identity();
         let cert_key = (id.cert_pem.as_str(), id.key_pem.as_str());
         let client = peer.client(Some(cert_key), None)?;
-        let req = PrepareUploadRequest { info: self.inner.device_info(), files };
-        let (active_client, resp) = match client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await {
+        let req = PrepareUploadRequest {
+            info: self.inner.device_info(),
+            files,
+        };
+        let (active_client, resp) = match client
+            .prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac)
+            .await
+        {
             Ok(r) => (client, r),
             Err(e) => {
                 // Tenta fallback com o protocolo alternativo se falhar por conexão (ex: HTTPS -> HTTP ou vice-versa)
                 if matches!(e, DuckerError::ConnectionFailed(_)) {
                     if let Some(alt_client) = peer.fallback_client(Some(cert_key), None) {
-                        match alt_client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await {
+                        match alt_client
+                            .prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac)
+                            .await
+                        {
                             Ok(r) => (alt_client, r),
                             Err(_) => return Err(e),
                         }
@@ -466,8 +571,16 @@ impl Node {
         let cb = Arc::new(on_progress);
         let mut done = 0u64;
         for (file_id, token) in &resp.files {
-            let Some((path, dto)) = by_id.get(file_id) else { continue };
-            let (cb2, fid, name, size, base) = (cb.clone(), file_id.clone(), dto.file_name.clone(), dto.size, done);
+            let Some((path, dto)) = by_id.get(file_id) else {
+                continue;
+            };
+            let (cb2, fid, name, size, base) = (
+                cb.clone(),
+                file_id.clone(),
+                dto.file_name.clone(),
+                dto.size,
+                done,
+            );
             let progress = Arc::new(move |sent: u64| {
                 cb2(SendProgress {
                     file_id: fid.clone(),
@@ -478,7 +591,10 @@ impl Node {
                     total,
                 })
             });
-            if let Err(e) = active_client.upload_file(&resp.session_id, file_id, token, path, size, progress).await {
+            if let Err(e) = active_client
+                .upload_file(&resp.session_id, file_id, token, path, size, progress)
+                .await
+            {
                 let _ = active_client.cancel(&resp.session_id).await;
                 return Err(e);
             }
@@ -502,13 +618,22 @@ impl Node {
         let ident = self.inner.identity();
         let cert_key = (ident.cert_pem.as_str(), ident.key_pem.as_str());
         let client = peer.client(Some(cert_key), None)?;
-        let req = PrepareUploadRequest { info: self.inner.device_info(), files: HashMap::from([(msg_id.clone(), dto)]) };
-        let (active_client, resp) = match client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await {
+        let req = PrepareUploadRequest {
+            info: self.inner.device_info(),
+            files: HashMap::from([(msg_id.clone(), dto)]),
+        };
+        let (active_client, resp) = match client
+            .prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac)
+            .await
+        {
             Ok(r) => (client, r),
             Err(e) => {
                 if matches!(e, DuckerError::ConnectionFailed(_)) {
                     if let Some(alt_client) = peer.fallback_client(Some(cert_key), None) {
-                        match alt_client.prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac).await {
+                        match alt_client
+                            .prepare_upload(&req, opts.pin.as_deref(), opts.expected_quac)
+                            .await
+                        {
                             Ok(r) => (alt_client, r),
                             Err(_) => return Err(e),
                         }
@@ -523,7 +648,9 @@ impl Node {
         if let Some(resp) = resp {
             // Receptor preferiu receber como arquivo.
             if let Some(token) = resp.files.get(&msg_id) {
-                active_client.upload_bytes(&resp.session_id, &msg_id, token, text.as_bytes().to_vec()).await?;
+                active_client
+                    .upload_bytes(&resp.session_id, &msg_id, token, text.as_bytes().to_vec())
+                    .await?;
             }
         }
         Ok(())
@@ -531,7 +658,14 @@ impl Node {
 
     /// Responde a um `IncomingRequest`. Retorna `false` se o pedido já expirou.
     pub fn respond(&self, session_id: &str, accept: bool) -> bool {
-        match self.inner.sessions.pending.lock().unwrap().remove(session_id) {
+        match self
+            .inner
+            .sessions
+            .pending
+            .lock()
+            .unwrap()
+            .remove(session_id)
+        {
             Some(tx) => tx.send(accept).is_ok(),
             None => false,
         }
@@ -545,7 +679,9 @@ impl Node {
                 s.cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
             }
             drop(guard);
-            self.inner.emit(NodeEvent::SessionCancelled { session_id: session_id.to_string() });
+            self.inner.emit(NodeEvent::SessionCancelled {
+                session_id: session_id.to_string(),
+            });
         }
     }
 
@@ -559,15 +695,21 @@ impl Node {
 }
 
 /// Coleta (caminho absoluto, nome relativo com '/', tamanho). Pastas viram "pasta/sub/arquivo".
-fn collect_files(path: &Path, out: &mut Vec<(PathBuf, String, u64)>) -> Result<()> {
+pub fn collect_files(path: &Path, out: &mut Vec<(PathBuf, String, u64)>) -> Result<()> {
     let meta = std::fs::metadata(path)
         .map_err(|_| DuckerError::Custom(format!("Arquivo não encontrado: {}", path.display())))?;
     if meta.is_file() {
-        let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "arquivo".into());
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "arquivo".into());
         out.push((path.to_path_buf(), name, meta.len()));
         return Ok(());
     }
-    let root_name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "pasta".into());
+    let root_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "pasta".into());
     let mut stack = vec![(path.to_path_buf(), root_name)];
     while let Some((dir, prefix)) = stack.pop() {
         for entry in std::fs::read_dir(&dir)? {
@@ -582,4 +724,14 @@ fn collect_files(path: &Path, out: &mut Vec<(PathBuf, String, u64)>) -> Result<(
         }
     }
     Ok(())
+}
+
+/// Calcula com precisão a contagem real de arquivos (expandindo pastas recursivamente) e o total em bytes.
+pub fn count_files_and_bytes(paths: &[PathBuf]) -> Result<(u64, u64)> {
+    let mut entries = Vec::new();
+    for p in paths {
+        collect_files(p, &mut entries)?;
+    }
+    let total_bytes: u64 = entries.iter().map(|(_, _, size)| *size).sum();
+    Ok((entries.len() as u64, total_bytes))
 }

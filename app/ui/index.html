@@ -15,6 +15,9 @@
 <body>
   <div class="app-container">
 
+    <!-- TOAST NOTIFICATIONS (Incoming messages & alerts) -->
+    <div id="toastContainer" class="toast-container"></div>
+
     <!-- DESKTOP SIDEBAR -->
     <aside class="sidebar">
       <div class="sidebar-header">
@@ -31,6 +34,20 @@
             <polyline points="9 22 9 12 15 12 15 22"/>
           </svg>
           <span>Início</span>
+        </button>
+
+        <button class="nav-item" data-page="chat">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>Mensagens</span>
+          <span class="nav-badge nav-badge-unread" id="sidebarChatBadge" style="display: none;">0</span>
+        </button>
+
+        <button class="nav-item" data-page="duckive">
+          <span class="nav-duckive-emoji">🦆</span>
+          <span>Duckive</span>
+          <span class="nav-badge nav-badge-yellow" id="sidebarDuckiveBadge">Nv. 1</span>
         </button>
 
         <button class="nav-item" data-page="devices">
@@ -77,12 +94,18 @@
           <img src="assets/duck-pixel.png" alt="Ducker" class="mobile-duck-icon">
           <span class="mobile-brand-name">Ducker</span>
         </div>
-        <button class="mobile-settings-btn" id="btnMobileSettings" title="Configurações">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-          </svg>
-        </button>
+        <div class="mobile-topbar-actions">
+          <button class="mobile-duckive-btn" id="btnMobileDuckive" title="Meu Duckive">
+            <span class="duckive-mini-avatar-wrap" id="mobileDuckiveAvatarWrap">🦆</span>
+            <span class="mobile-duckive-lvl-badge" id="mobileDuckiveLvlBadge">Nv. 1</span>
+          </button>
+          <button class="mobile-settings-btn" id="btnMobileSettings" title="Configurações">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
+        </div>
       </header>
 
       <!-- DESKTOP TOP HEADER -->
@@ -92,6 +115,17 @@
           <p>Seus dispositivos estão online e prontos para transferir.</p>
         </div>
         <div class="header-right">
+          <!-- Duckive Header Widget -->
+          <button class="duckive-header-pill" id="btnHeaderDuckive" title="Ver meu Duckive">
+            <div class="duckive-header-avatar" id="headerDuckiveAvatar">
+              <!-- Rendered SVG avatar -->
+            </div>
+            <div class="duckive-header-text">
+              <span class="duckive-header-name" id="headerDuckiveName">Duckive</span>
+              <span class="duckive-header-level" id="headerDuckiveLvl">Nível 1</span>
+            </div>
+          </button>
+
           <div class="online-pill">
             <span class="status-dot"></span>
             <span>Online</span>
@@ -127,6 +161,28 @@
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" class="chevron-icon">
                   <path d="m9 18 6-6-6-6"/>
                 </svg>
+              </div>
+            </div>
+
+            <!-- Duckive Companion Card -->
+            <div class="duckive-companion-card" id="duckiveHomeCard">
+              <div class="duckive-companion-left">
+                <div class="duckive-home-avatar-box" id="duckiveHomeAvatar">
+                  <!-- Rendered SVG Avatar -->
+                </div>
+                <div class="duckive-companion-meta">
+                  <div class="duckive-companion-title-row">
+                    <h4 id="duckiveHomeName">Meu Duckive</h4>
+                    <span class="badge-duckive-lvl" id="duckiveHomeBadge">Nível 1 • Pato Recruta</span>
+                  </div>
+                  <p id="duckiveHomeNextUnlock">Próximo desbloqueio: Boné Ducker (0/10 arquivos)</p>
+                  <div class="duckive-progress-rail">
+                    <div class="duckive-progress-fill" id="duckiveHomeProgressFill" style="width: 0%;"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="duckive-companion-right">
+                <button class="btn btn-secondary btn-sm" id="btnOpenDuckiveFromHome">Personalizar 🦆</button>
               </div>
             </div>
 
@@ -234,6 +290,107 @@
         </div>
       </main>
 
+      <!-- PAGE: MENSAGENS / CHAT P2P -->
+      <main class="page-content" id="page-chat">
+        <div class="subpage-header chat-page-header">
+          <div>
+            <h2>Mensagens & Chat Wi-Fi 💬</h2>
+            <p>Conversas diretas e seguras ponto a ponto na rede local, sem depender da internet.</p>
+          </div>
+          <div class="subpage-actions">
+            <span class="chat-protocol-badge">🔒 P2P Direto • LocalSend v2</span>
+          </div>
+        </div>
+
+        <div class="chat-layout-box">
+          <!-- LEFT: CONVERSATIONS / CONTACTS LIST -->
+          <div class="chat-conversations-pane" id="chatConversationsPane">
+            <div class="chat-conversations-header">
+              <div class="chat-search-wrap">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"/>
+                  <path d="m21 21-4.35-4.35"/>
+                </svg>
+                <input type="text" id="chatSearchInput" placeholder="Buscar dispositivo...">
+              </div>
+            </div>
+
+            <div class="chat-contacts-list" id="chatContactsList">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <!-- RIGHT: ACTIVE CONVERSATION WINDOW -->
+          <div class="chat-window-pane" id="chatWindowPane">
+            <!-- EMPTY STATE WHEN NO CHAT IS OPEN -->
+            <div class="chat-empty-state" id="chatEmptyState">
+              <div class="chat-empty-icon-wrap">
+                <span class="chat-empty-duck">🦆</span>
+                <span class="chat-empty-bubble">💬</span>
+              </div>
+              <h3>Ducker Messenger P2P</h3>
+              <p>Selecione um dispositivo ao lado para conversar instantaneamente pela rede Wi-Fi.</p>
+              <div class="chat-empty-tips">
+                <div class="chat-tip-item">⚡ <strong>Sem Internet:</strong> Funciona mesmo se o roteador estiver sem conexão externa</div>
+                <div class="chat-tip-item">🔒 <strong>Privacidade Total:</strong> As mensagens viajam direto dispositivo a dispositivo</div>
+                <div class="chat-tip-item">📱 <strong>Universal:</strong> Conversa com outros Duckers e com o app LocalSend oficial</div>
+              </div>
+            </div>
+
+            <!-- ACTIVE CHAT VIEW -->
+            <div class="chat-active-view" id="chatActiveView" style="display: none;">
+              <!-- Active Chat Header -->
+              <div class="chat-active-header">
+                <button class="btn-icon-subtle chat-back-btn" id="btnChatBack" title="Voltar para a lista">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <path d="m15 18-6-6 6-6"/>
+                  </svg>
+                </button>
+                <div class="chat-active-avatar" id="chatActiveAvatar">🖥️</div>
+                <div class="chat-active-meta">
+                  <h4 id="chatActiveName">Dispositivo</h4>
+                  <span id="chatActiveSubtitle">🟢 Conectado na rede local</span>
+                </div>
+                <div class="chat-active-actions">
+                  <button class="btn btn-secondary btn-sm" id="btnChatSendFileDirect" title="Enviar arquivos para este dispositivo">
+                    📎 Enviar Arquivo
+                  </button>
+                  <button class="btn-icon-subtle" id="btnChatClearHistory" title="Limpar histórico desta conversa">
+                    🗑️
+                  </button>
+                </div>
+              </div>
+
+              <!-- Message Stream Timeline -->
+              <div class="chat-messages-stream" id="chatMessagesStream">
+                <!-- Bubbles injected here -->
+              </div>
+
+              <!-- Chat Input Bar -->
+              <div class="chat-input-bar">
+                <button class="chat-action-btn" id="btnChatAttachFile" title="Anexar arquivo">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l7.88-7.88"/>
+                  </svg>
+                </button>
+                <button class="chat-action-btn" id="btnChatQuickDuck" title="Enviar Quac 🦆">
+                  🦆
+                </button>
+                <div class="chat-input-field-wrap">
+                  <textarea id="chatInputText" placeholder="Digite uma mensagem... (Enter para enviar)" rows="1"></textarea>
+                </div>
+                <button class="chat-send-btn" id="btnChatSend" title="Enviar mensagem">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="m22 2-7 20-4-9-9-4Z"/>
+                    <path d="M22 2 11 13"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
       <!-- PAGE: DISPOSITIVOS (DETALHADO) -->
       <main class="page-content" id="page-devices">
         <div class="subpage-header">
@@ -262,6 +419,112 @@
           </div>
         </div>
         <div class="transfers-history-list" id="transfersFullHistory"></div>
+      </main>
+
+      <!-- PAGE: DUCKIVE (INVENTÁRIO, PROGRESSÃO & CONQUISTAS) -->
+      <main class="page-content" id="page-duckive">
+        <div class="subpage-header">
+          <div>
+            <h2>Meu Duckive 🦆</h2>
+            <p>Seu mascote evolui conforme você utiliza o Ducker para transferir arquivos.</p>
+          </div>
+          <div class="subpage-actions">
+            <button class="btn btn-secondary" id="btnRefreshDuckive">🔄 Atualizar</button>
+          </div>
+        </div>
+
+        <div class="duckive-grid-container">
+          
+          <!-- LEFT HERO: AVATAR SHOWCASE & LEVEL -->
+          <div class="duckive-stage-panel">
+            <div class="duckive-stage-card">
+              <div class="duckive-aura-glow"></div>
+              
+              <!-- Large Interactive Duck Avatar SVG Container -->
+              <div class="duckive-stage-avatar-wrapper" id="duckiveStageAvatarWrapper">
+                <!-- SVG dynamically rendered -->
+              </div>
+
+              <!-- Name & Level Title -->
+              <div class="duckive-identity-block">
+                <div class="duckive-name-row">
+                  <h3 id="duckiveStageName">Duckive</h3>
+                  <button class="btn-icon-subtle" id="btnEditDuckiveName" title="Renomear Duckive">✏️</button>
+                </div>
+                <div class="badge-duckive-lvl" id="duckiveStageLevelTitle">
+                  Nível 1 • Pato Recruta
+                </div>
+              </div>
+
+              <!-- Progression Bar to Next Level -->
+              <div class="duckive-progress-summary-card">
+                <div class="stage-prog-header">
+                  <span id="duckiveProgLabel">Próximo Nível:</span>
+                  <span id="duckiveProgPct" class="mono">0%</span>
+                </div>
+                <div class="duckive-progress-rail">
+                  <div class="duckive-progress-fill" id="duckiveStageProgressFill" style="width: 0%;"></div>
+                </div>
+                <div class="stage-prog-footer">
+                  <span id="duckiveStageFilesCounter">0 / 10 arquivos</span>
+                  <span id="duckiveStageNextReward" class="text-accent">Próximo: Boné Ducker</span>
+                </div>
+              </div>
+
+              <!-- Quick Stats Grid -->
+              <div class="duckive-mini-stats-grid">
+                <div class="duckive-stat-box">
+                  <div class="stat-num" id="duckiveStatFilesSent">0</div>
+                  <div class="stat-label">Arquivos Enviados</div>
+                </div>
+                <div class="duckive-stat-box">
+                  <div class="stat-num" id="duckiveStatTransfers">0</div>
+                  <div class="stat-label">Transferências</div>
+                </div>
+                <div class="duckive-stat-box">
+                  <div class="stat-num" id="duckiveStatAchievements">0/6</div>
+                  <div class="stat-label">Conquistas</div>
+                </div>
+              </div>
+
+              <!-- Equipped Summary Chips -->
+              <div class="equipped-summary-box">
+                <span class="equipped-summary-label">Itens Equipados:</span>
+                <div class="equipped-chips-list" id="equippedChipsList"></div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- RIGHT PANEL: TABS, INVENTORY & ACHIEVEMENTS -->
+          <div class="duckive-inventory-panel">
+            
+            <div class="duckive-nav-tabs">
+              <button class="duckive-tab-btn active" data-tab="all">Todos</button>
+              <button class="duckive-tab-btn" data-tab="head">👑 Cabeça</button>
+              <button class="duckive-tab-btn" data-tab="outfit">🧥 Roupas</button>
+              <button class="duckive-tab-btn" data-tab="accessory">👓 Acessórios</button>
+              <button class="duckive-tab-btn" data-tab="effect">✨ Efeitos</button>
+              <button class="duckive-tab-btn" data-tab="achievements">🏆 Conquistas</button>
+            </div>
+
+            <!-- TAB: ITEMS GRID -->
+            <div class="duckive-tab-pane active" id="paneItems">
+              <div class="cosmetics-items-grid" id="cosmeticsItemsGrid">
+                <!-- Injected via JavaScript -->
+              </div>
+            </div>
+
+            <!-- TAB: ACHIEVEMENTS GRID -->
+            <div class="duckive-tab-pane" id="paneAchievements" style="display: none;">
+              <div class="achievements-items-grid" id="achievementsItemsGrid">
+                <!-- Injected via JavaScript -->
+              </div>
+            </div>
+
+          </div>
+
+        </div>
       </main>
 
       <!-- PAGE: CONFIGURAÇÕES -->
@@ -323,6 +586,119 @@
             </div>
           </div>
 
+          <!-- CONTA ADMINISTRATIVA (FAELINDO) -->
+          <div class="settings-card admin-settings-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title-wrap">
+                <span class="admin-badge-icon">👑</span>
+                <div>
+                  <h4>Painel do Administrador</h4>
+                  <p class="card-subtitle">Área de gestão interna, testes e diagnósticos • Faelindo</p>
+                </div>
+              </div>
+              <span id="adminStatusBadge" class="admin-status-badge status-logged-out">Não Autenticado</span>
+            </div>
+
+            <div id="adminLoggedOutView" class="admin-auth-box">
+              <p class="admin-note">
+                Insira a chave de desenvolvedor para liberar privilégios administrativos, métricas avançadas e simulação de transferências.
+              </p>
+              <div class="input-with-button">
+                <input type="password" id="inputAdminCode" placeholder="Código de acesso dev..." autocomplete="off">
+                <button class="btn btn-primary" id="btnAdminLogin">Autenticar 👑</button>
+              </div>
+              <small class="admin-security-note">
+                🔒 Por segurança, chaves secretas de desenvolvedor só funcionam em compilações autorizadas de teste.
+              </small>
+            </div>
+
+            <div id="adminLoggedInView" class="admin-active-box" style="display: none;">
+              <div class="admin-welcome-banner">
+                <div class="admin-avatar-wrap">👑</div>
+                <div>
+                  <strong>Sessão Ativa: <span id="adminSessionName">Faelindo</span></strong>
+                  <p>Privilégios de Administrador e Modo Dev ativados.</p>
+                </div>
+              </div>
+              <div class="admin-quick-actions">
+                <button class="btn btn-accent-yellow" id="btnOpenAdminModal">
+                  <span>📊 Abrir Painel Admin (Faelindo)</span>
+                </button>
+                <button class="btn btn-secondary" id="btnAdminLogout">
+                  <span>Sair da Sessão</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ATUALIZAÇÕES DO DUCKER -->
+          <div class="settings-card updater-card" id="updaterCard">
+            <div class="card-header-row">
+              <div class="card-header-title">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" class="header-icon-yellow">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" x2="12" y1="15" y2="3"/>
+                </svg>
+                <h4>Atualizações do Ducker</h4>
+              </div>
+              <span class="version-pill" id="currentVersionBadge">v0.2.0</span>
+            </div>
+
+            <p class="updater-desc">
+              Consulte releases oficiais do repositório (<span class="mono">oFerrazDEV00/ducker</span>) com download automático, verificação de integridade e instalação direta.
+            </p>
+
+            <div class="updater-status-box" id="updaterStatusBox" style="display: none;">
+              <div class="updater-status-header">
+                <span class="updater-status-indicator" id="updaterStatusDot"></span>
+                <span class="updater-status-title" id="updaterStatusTitle">Verificando...</span>
+              </div>
+              <p class="updater-status-message" id="updaterStatusMsg"></p>
+
+              <!-- Progress bar when downloading -->
+              <div class="updater-progress-container" id="updaterProgressContainer" style="display: none;">
+                <div class="updater-progress-bar-wrap">
+                  <div class="updater-progress-bar-fill" id="updaterProgressBarFill" style="width: 0%;"></div>
+                </div>
+                <div class="updater-progress-meta">
+                  <span id="updaterProgressBytes">0 MB / 0 MB</span>
+                  <span id="updaterProgressPercent">0%</span>
+                </div>
+              </div>
+
+              <!-- Release notes if available -->
+              <div class="updater-notes-box" id="updaterNotesBox" style="display: none;">
+                <span class="updater-notes-title">Novidades da versão:</span>
+                <div class="updater-notes-content" id="updaterNotesContent"></div>
+              </div>
+            </div>
+
+            <div class="updater-actions-row">
+              <button class="btn btn-primary" id="btnCheckUpdates">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                </svg>
+                <span>Verificar atualizações</span>
+              </button>
+
+              <button class="btn btn-secondary" id="btnCancelUpdateDownload" style="display: none;">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+                <span>Cancelar download</span>
+              </button>
+
+              <button class="btn btn-accent-yellow" id="btnInstallUpdate" style="display: none;">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <span>Instalar atualização</span>
+              </button>
+            </div>
+          </div>
+
           <div class="settings-card about-card">
             <h4>Sobre o Ducker</h4>
             <div class="about-card-body">
@@ -349,6 +725,21 @@
           <span>Início</span>
         </button>
 
+        <button class="mobile-nav-item" data-page="chat">
+          <div class="mobile-nav-icon-wrap">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            <span class="mobile-badge-unread" id="mobileChatBadge" style="display: none;">0</span>
+          </div>
+          <span>Chat</span>
+        </button>
+
+        <button class="mobile-nav-item" data-page="duckive">
+          <span class="mobile-bottom-duck">🦆</span>
+          <span>Duckive</span>
+        </button>
+
         <button class="mobile-nav-item" data-page="devices">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
             <rect width="20" height="14" x="2" y="3" rx="2"/>
@@ -365,16 +756,15 @@
             <path d="m8 21-4-4 4-4"/>
             <path d="M4 17h16"/>
           </svg>
-          <span>Transferências</span>
+          <span>Histórico</span>
         </button>
 
         <button class="mobile-nav-item" data-page="settings">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="4" x2="20" y1="12" y2="12"/>
-            <line x1="4" x2="20" y1="6" y2="6"/>
-            <line x1="4" x2="20" y1="18" y2="18"/>
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
-          <span>Mais</span>
+          <span>Ajustes</span>
         </button>
       </nav>
 
@@ -384,6 +774,23 @@
         <span>Enviar arquivos</span>
       </button>
 
+    </div>
+  </div>
+
+  <!-- DUCKIVE UNLOCK CELEBRATION MODAL -->
+  <div class="modal-backdrop" id="duckiveUnlockModal" style="display: none;">
+    <div class="modal-dialog modal-dialog-celebration">
+      <div class="celebration-badge-top">🎉 DESBLOQUEIO DUCKIVE</div>
+      <div class="celebration-avatar-preview" id="celebrationAvatarPreview">
+        <!-- Preview SVG -->
+      </div>
+      <h3 id="celebrationTitle">Novo Item Desbloqueado!</h3>
+      <p id="celebrationDesc">Você evoluiu seu pato e conquistou um novo item para o seu inventário.</p>
+      
+      <div class="modal-dialog-footer celebration-footer">
+        <button class="btn btn-secondary" id="btnDismissCelebration">Fechar</button>
+        <button class="btn btn-accent-yellow" id="btnEquipCelebrationNow">Equipar Agora 🦆</button>
+      </div>
     </div>
   </div>
 
@@ -411,6 +818,123 @@
       <div class="modal-dialog-footer" id="modalActionButtons">
         <button class="btn btn-danger" id="btnRejectTransfer">Recusar</button>
         <button class="btn btn-accent-yellow" id="btnAcceptTransfer">Aceitar Transferência 🦆</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: PAINEL ADMINISTRATIVO (FAELINDO) -->
+  <div class="modal-backdrop" id="adminModal" style="display: none;">
+    <div class="modal-dialog modal-dialog-admin">
+      <div class="admin-modal-header">
+        <div class="admin-modal-title">
+          <span class="admin-modal-crown">👑</span>
+          <div>
+            <h3>Painel do Administrador — Faelindo</h3>
+            <span class="admin-modal-sub">Métricas de Rede, Simulações & Diagnósticos Dev</span>
+          </div>
+        </div>
+        <button class="btn-close-modal" id="btnCloseAdminModal">×</button>
+      </div>
+
+      <div class="admin-modal-tabs">
+        <button class="admin-tab-btn active" data-adm-tab="metrics">📊 Métricas do Sistema</button>
+        <button class="admin-tab-btn" data-adm-tab="simulation">🟢 Simulação & Cosméticos</button>
+        <button class="admin-tab-btn" data-adm-tab="diagnostics">🩺 Diagnóstico & Rede</button>
+      </div>
+
+      <div class="admin-modal-body">
+        <!-- TAB 1: MÉTRICAS -->
+        <div class="admin-tab-pane active" id="admPaneMetrics">
+          <div class="admin-stats-grid">
+            <div class="admin-stat-card">
+              <span class="stat-number" id="admStatFilesSent">0</span>
+              <span class="stat-name">Arquivos Enviados</span>
+            </div>
+            <div class="admin-stat-card">
+              <span class="stat-number" id="admStatBytesSent">0 MB</span>
+              <span class="stat-name">Volume Enviado</span>
+            </div>
+            <div class="admin-stat-card">
+              <span class="stat-number" id="admStatFilesReceived">0</span>
+              <span class="stat-name">Arquivos Recebidos</span>
+            </div>
+            <div class="admin-stat-card">
+              <span class="stat-number" id="admStatDuckiveLevel">1</span>
+              <span class="stat-name" id="admStatDuckiveTitle">Pato Recruta</span>
+            </div>
+            <div class="admin-stat-card">
+              <span class="stat-number" id="admStatCosmeticsCount">0 / 0</span>
+              <span class="stat-name">Cosméticos Desbloqueados</span>
+            </div>
+            <div class="admin-stat-card">
+              <span class="stat-number" id="admStatPeersCount">0</span>
+              <span class="stat-name">Dispositivos Conectados</span>
+            </div>
+          </div>
+          <div class="admin-info-box">
+            <p><strong>Porta LocalSend:</strong> <span class="mono" id="admStatPort">53317</span></p>
+            <p><strong>Pasta de Salvamento:</strong> <span class="mono" id="admStatSaveDir">...</span></p>
+            <p><strong>Modo de Compilação:</strong> <span class="badge-dev-mode" id="admStatBuildMode">Debug Dev</span></p>
+          </div>
+        </div>
+
+        <!-- TAB 2: SIMULAÇÃO & COSMÉTICOS -->
+        <div class="admin-tab-pane" id="admPaneSimulation" style="display: none;">
+          <div class="simulation-section">
+            <h4>🟢 Teste da Recompensa Lendária (50.000 Arquivos)</h4>
+            <p class="sim-desc">
+              Simule a transferência de 50.000 arquivos para acionar a celebração histórica e desbloquear o lendário <strong>Pato Verde do WhatsApp</strong>.
+            </p>
+            <button class="btn btn-whatsapp-sim" id="btnSimulate50k">
+              <span>🦆 Simular +50.000 Arquivos (Desbloquear Pato Verde WhatsApp) 🟢</span>
+            </button>
+          </div>
+
+          <div class="simulation-section mt-4">
+            <h4>📦 Simulações Adicionais</h4>
+            <div class="sim-buttons-row">
+              <button class="btn btn-secondary" id="btnSimulate100">Simular +100 Arquivos</button>
+              <button class="btn btn-secondary" id="btnSimulate1k">Simular +1.000 Arquivos (Coroa Real)</button>
+            </div>
+          </div>
+
+          <div class="simulation-section mt-4">
+            <h4>🧪 Desbloqueio Individual para Homologação</h4>
+            <p class="sim-desc">Desbloqueie qualquer cosmético do catálogo imediatamente para inspecionar renderização:</p>
+            <div class="input-with-button">
+              <select id="selectTestCosmetic" class="admin-select">
+                <option value="whatsapp_green_skin">🟢 Pato Verde do WhatsApp (Lendário - 50k)</option>
+                <option value="legendary_crown">👑 Coroa Real Dourada (Lendário - 1k)</option>
+                <option value="legendary_cape">✨ Manto Lendário Real (Lendário - 1k)</option>
+                <option value="cosmic_duck">🌌 Aura Cósmica Suprema (Lendário - 5k)</option>
+                <option value="business_suit">👔 Terno Executivo (Épico - 100)</option>
+                <option value="dev_coder">💻 Roupa de Programador (Épico - 250)</option>
+                <option value="astronaut_suit">🚀 Traje Espacial Ducker (Épico - 500)</option>
+                <option value="astronaut_helmet">👨‍🚀 Capacete de Astronauta (Épico - 500)</option>
+                <option value="messenger_badge">💬 Pin Mensageiro Veloz (Raro - Conquista)</option>
+                <option value="turbo_goggles">⚡ Óculos Turbo (Raro - Conquista)</option>
+                <option value="globe_trotter_badge">🌐 Pin Multiplataforma (Raro - Conquista)</option>
+              </select>
+              <button class="btn btn-primary" id="btnUnlockSelectedCosmetic">Desbloquear Item</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: DIAGNÓSTICO -->
+        <div class="admin-tab-pane" id="admPaneDiagnostics" style="display: none;">
+          <div class="diag-header-actions">
+            <h4>Dispositivos Conhecidos na Rede Local</h4>
+            <button class="btn btn-secondary btn-sm" id="btnAdmRescanNet">Forçar Varredura (Subnet Scan)</button>
+          </div>
+          <div class="diag-peers-list" id="admPeersList">
+            <!-- Injected via JavaScript -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-dialog-footer">
+        <button class="btn btn-secondary" id="btnRefreshAdminData">Atualizar Dados</button>
+        <button class="btn btn-primary" id="btnDoneAdmin">Concluir</button>
       </div>
     </div>
   </div>

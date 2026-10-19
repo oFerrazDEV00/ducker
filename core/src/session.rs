@@ -43,7 +43,13 @@ pub fn sanitize_relative_path(name: &str) -> PathBuf {
             let s = part.to_string_lossy();
             let cleaned: String = s
                 .chars()
-                .map(|c| if matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control() { '_' } else { c })
+                .map(|c| {
+                    if matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control() {
+                        '_'
+                    } else {
+                        c
+                    }
+                })
                 .collect();
             let cleaned = cleaned.trim().trim_end_matches('.').to_string();
             if !cleaned.is_empty() {
@@ -63,9 +69,18 @@ pub fn unique_path(dir: &Path, relative: &Path) -> PathBuf {
     if !candidate.exists() {
         return candidate;
     }
-    let parent = candidate.parent().map(Path::to_path_buf).unwrap_or_else(|| dir.to_path_buf());
-    let stem = candidate.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-    let ext = candidate.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let parent = candidate
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| dir.to_path_buf());
+    let stem = candidate
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let ext = candidate
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
     for i in 1.. {
         let p = parent.join(format!("{stem} ({i}){ext}"));
         if !p.exists() {
@@ -81,13 +96,28 @@ mod tests {
 
     #[test]
     fn sanitizes_traversal() {
-        assert_eq!(sanitize_relative_path("../../etc/passwd"), PathBuf::from("etc").join("passwd"));
+        assert_eq!(
+            sanitize_relative_path("../../etc/passwd"),
+            PathBuf::from("etc").join("passwd")
+        );
         #[cfg(windows)]
-        assert_eq!(sanitize_relative_path("C:\\Windows\\x.dll"), PathBuf::from("Windows").join("x.dll"));
+        assert_eq!(
+            sanitize_relative_path("C:\\Windows\\x.dll"),
+            PathBuf::from("Windows").join("x.dll")
+        );
         #[cfg(not(windows))]
-        assert_eq!(sanitize_relative_path("C:\\Windows\\x.dll"), PathBuf::from("C_").join("Windows").join("x.dll"));
-        assert_eq!(sanitize_relative_path("fotos/a.jpg"), PathBuf::from("fotos").join("a.jpg"));
-        assert_eq!(sanitize_relative_path(".."), PathBuf::from("arquivo_recebido"));
+        assert_eq!(
+            sanitize_relative_path("C:\\Windows\\x.dll"),
+            PathBuf::from("C_").join("Windows").join("x.dll")
+        );
+        assert_eq!(
+            sanitize_relative_path("fotos/a.jpg"),
+            PathBuf::from("fotos").join("a.jpg")
+        );
+        assert_eq!(
+            sanitize_relative_path(".."),
+            PathBuf::from("arquivo_recebido")
+        );
     }
 
     #[test]

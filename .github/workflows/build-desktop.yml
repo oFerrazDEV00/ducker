@@ -1,0 +1,220 @@
+name: Build Desktop Installers (Windows & Linux)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - rewrite/localsend-rust
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      build_target:
+        description: 'Platform to build'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - windows
+          - linux
+
+permissions:
+  contents: write
+
+jobs:
+  # ========================================================
+  # BUILD WINDOWS (NSIS + MSI)
+  # ========================================================
+  build-windows:
+    name: Build Windows Installer
+    if: ${{ github.event.inputs.build_target != 'linux' }}
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build Ducker CLI (release)
+        run: cargo build -p ducker-cli --release
+
+      - name: Copy CLI to Tauri Resources
+        run: |
+          New-Item -ItemType Directory -Force -Path app/src-tauri/resources
+          Copy-Item target/release/ducker.exe app/src-tauri/resources/ducker.exe
+          Copy-Item LICENSE app/src-tauri/resources/LICENSE
+        shell: pwsh
+
+      - name: Install Node Dependencies
+        working-directory: ./app
+        run: npm install
+
+      - name: Build Tauri Desktop App (Windows)
+        working-directory: ./app
+        run: npx tauri build
+
+      - name: List Build Artifacts
+        run: |
+          Write-Host "=== NSIS Installer ==="
+          Get-ChildItem -Recurse target/release/bundle/nsis/*.exe -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName) ($([math]::Round($_.Length/1MB, 2)) MB)" }
+          Write-Host "=== MSI Installer ==="
+          Get-ChildItem -Recurse target/release/bundle/msi/*.msi -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName) ($([math]::Round($_.Length/1MB, 2)) MB)" }
+        shell: pwsh
+
+      - name: Upload Windows NSIS Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ducker-windows-nsis
+          path: target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: Upload Windows MSI Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ducker-windows-msi
+          path: target/release/bundle/msi/*.msi
+          if-no-files-found: warn
+
+      - name: Upload Standalone CLI (Windows)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ducker-cli-windows-x86_64
+          path: target/release/ducker.exe
+          if-no-files-found: error
+
+  # ========================================================
+  # BUILD LINUX (AppImage + DEB + CLI tarball)
+  # ========================================================
+  build-linux:
+    name: Build Linux Packages
+    if: ${{ github.event.inputs.build_target != 'windows' }}
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build Ducker CLI (release)
+        run: cargo build -p ducker-cli --release
+
+      - name: Copy CLI to Tauri Resources
+        run: |
+          mkdir -p app/src-tauri/resources
+          cp target/release/ducker app/src-tauri/resources/ducker
+          chmod +x app/src-tauri/resources/ducker
+          cp LICENSE app/src-tauri/resources/LICENSE
+
+      - name: Install Node Dependencies
+        working-directory: ./app
+        run: npm install
+
+      - name: Build Tauri Desktop App (Linux)
+        working-directory: ./app
+        run: npx tauri build
+
+      - name: Create Standalone CLI Tarball
+        run: |
+          VERSION=$(grep '^version' cli/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          ARCH=$(uname -m)
+          mkdir -p dist/ducker-cli
+          cp target/release/ducker dist/ducker-cli/
+          chmod +x dist/ducker-cli/ducker
+          cp LICENSE dist/ducker-cli/
+          cp README.md dist/ducker-cli/
+          cat > dist/ducker-cli/install.sh << 'EOF'
+          #!/bin/bash
+          set -e
+          PREFIX="${1:-$HOME/.local}"
+          BIN_DIR="$PREFIX/bin"
+          echo "Installing Ducker CLI to $BIN_DIR..."
+          mkdir -p "$BIN_DIR"
+          cp ducker "$BIN_DIR/ducker"
+          chmod +x "$BIN_DIR/ducker"
+          echo "Ducker CLI installed! Make sure $BIN_DIR is in your PATH."
+          echo "Run: ducker --help"
+          EOF
+          chmod +x dist/ducker-cli/install.sh
+          tar -czf "dist/ducker-cli-${VERSION}-linux-${ARCH}.tar.gz" -C dist ducker-cli
+
+      - name: List Build Artifacts
+        run: |
+          echo "=== AppImage ==="
+          ls -lh target/release/bundle/appimage/*.AppImage 2>/dev/null || echo "  (none)"
+          echo "=== Debian Package ==="
+          ls -lh target/release/bundle/deb/*.deb 2>/dev/null || echo "  (none)"
+          echo "=== CLI Tarball ==="
+          ls -lh dist/*.tar.gz 2>/dev/null || echo "  (none)"
+
+      - name: Upload Linux AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: ducker-linux-appimage
+          path: target/release/bundle/appimage/*.AppImage
+          if-no-files-found: warn
+
+      - name: Upload Linux DEB Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ducker-linux-deb
+          path: target/release/bundle/deb/*.deb
+          if-no-files-found: warn
+
+      - name: Upload Standalone CLI (Linux)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ducker-cli-linux-x86_64
+          path: dist/*.tar.gz
+          if-no-files-found: error

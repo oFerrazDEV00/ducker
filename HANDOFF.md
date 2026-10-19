@@ -172,3 +172,44 @@ cargo run -p ducker-cli -- send .\README.md --to <alias>
       * Job Android: compilação automática dos APKs (arm64, armv7, x86_64) via Ubuntu runner com NDK e upload como artefatos de download.
       * Job iOS: compilação automática do IPA unsigned compatível com AltStore/Sideloadly via runner macOS.
     - Criados scripts auxiliares locais em `scripts/` (`setup-mobile-env.bat` e `build-apk-local.bat`).
+- 2026-10-19 — Sessão 4 (Gemini):
+  * **Sistema Oficial de Instalação e Distribuição (Windows e Linux):**
+    - Criado `LICENSE` oficial com licença MIT atribuída a `oFerrazDEV00`.
+    - Identidade visual aplicada ao instalador NSIS: gerados bitmaps de cabeçalho (`app/src-tauri/nsis/header.bmp`, 150x57) e barra lateral (`app/src-tauri/nsis/sidebar.bmp`, 164x314) com a paleta amarela `#FFC83D`, mascote pato de borracha e slogan *"Be Simple, Be Duck."*.
+    - `tauri.conf.json` configurado com `bundle.windows.nsis` (suporte a `currentUser` e `perMachine`, seletor de idiomas, hooks personalizados e caminhos de imagens) e `bundle.linux` (dependências de sistema `libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libayatana-appindicator3-1` para pacote `.deb` e AppImage).
+    - **Seleção de Componentes e PATH:** implementado em `app/src-tauri/nsis/hooks.nsh` com prompt interativo e empacotamento de recursos (`app/src-tauri/resources/ducker.exe`). Usuário escolhe entre Desktop + CLI ou apenas Desktop.
+    - **Gerenciamento Seguro de PATH:** adição idempotente ao `HKCU\Environment\Path` sem duplicatas e remoção cirúrgica na desinstalação via broadcast de `WM_SETTINGCHANGE`.
+    - **Ciclo de Vida e Desinstalação:** preservação de arquivos de usuário (`%APPDATA%\dev.oferraz.ducker\`), downloads e chaves/certificados TLS.
+    - **Scripts de Build e Automação:**
+      * Windows: `scripts/build-installer.bat` (compila CLI, copia recursos e gera MSI + NSIS via Tauri).
+      * Linux: `scripts/build-installer.sh` (compila CLI, gera AppImage, `.deb` e tarball com `install.sh`).
+    - **CI/CD Desktop:** `.github/workflows/build-desktop.yml` para compilação automatizada no Windows (NSIS, MSI, CLI) e Linux Ubuntu 22.04 LTS (AppImage, DEB, CLI tarball).
+    - **Validação:** todos os 22 testes da workspace aprovados (`ducker-core` e `e2e`), CLI release validada e artefatos de instalador gerados com sucesso (`Ducker_0.2.0_x64-setup.exe` de 6.27 MiB e `Ducker_0.2.0_x64_en-US.msi` de 8.86 MiB).
+- 2026-10-19 — Sessão 5 (Gemini):
+  * **Interface de Terminal (TUI) Interativa e Moderna (`cli/src/tui/`):**
+    - Implementada experiência de terminal de tela inteira inspirada em Codex CLI e Claude Code usando `ratatui 0.29` e `crossterm 0.28`.
+    - Identidade visual refinada: amarelo `#FFC83D`, tons escuros para blocos, pato de borracha Unicode/ASCII como mascote central e badges de status.
+    - Executar `ducker` sem subcomandos em qualquer TTY abre a TUI automaticamente.
+    - Suporte a detecção de terminal não interativo (`std::io::stdout().is_terminal()`), fazendo fallback para o receptor CLI em pipes, scripts e automações.
+    - Layout adaptável com proteção contra redimensionamento em terminais pequenos (< 65 colunas ou < 16 linhas).
+    - Panic hook configurado para restaurar raw mode, alternate screen e cursor em qualquer situação de encerramento.
+    - Abas interativas: `[1] Radar & Transferências`, `[2] Duckive Companion`, `[3] Ajuda & Comandos`.
+    - Modais interativos com captura de teclado para aceitar/recusar transferências recebidas (`[y]/[n]`), envio de mensagens de texto (`[t]`) e envio de arquivos (`[s]`).
+    - Navegação rápida via teclado (`↑`/`↓` ou `k`/`j`), atalhos `[r]` (re-escanear), `[d]` (Duckive) e `[q]` (sair).
+  * **Melhorias e Correções no Duckive:**
+    - Corrigida a contagem de arquivos para percorrer recursivamente árvores de diretórios via `ducker_core::count_files_and_bytes`.
+    - Evitado progresso falso ou contagem duplicada em transferências vazias (`files == 0 && bytes == 0 && !is_text`).
+    - Implementada reconciliação segura do catálogo (`reconcile_catalog`) sem perder cosméticos equipados, cosméticos customizados de versões anteriores ou conquistas já desbloqueadas.
+    - Confirmada e implementada a conquista épica `whatsapp_green_legend` aos 50.000 arquivos enviados, liberando o cosmético lendário `whatsapp_green_skin` (Pato Verde do WhatsApp) e nível 10 ("Mestre Esmeralda WhatsApp").
+  * **Verificador e Atualizador Automático de Versões (GUI Tauri):**
+    - Criado módulo `app/src-tauri/src/updater.rs` com comparador semver (`is_newer_version`), consulta à API oficial do GitHub Releases (`oFerrazDEV00/ducker`), seleção de asset da plataforma (.exe/.msi no Windows, AppImage/.deb no Linux).
+    - Download streaming HTTPS com cálculo simultâneo de hash SHA-256, cancelamento atômico via `AtomicBool` e emissão de progresso (`ducker://update-download-progress`).
+    - Execução do instalador validado no sistema operacional (`updater::run_installer`).
+    - Card "Atualizações do Ducker" na aba Configurações com botão visível "Verificar atualizações", barra de progresso em tempo real, botão de cancelar e botão de instalar/reiniciar.
+  * **Validação Completa da Workspace:**
+    - `cargo fmt --check`: 100% formatado e em conformidade.
+    - `cargo check --workspace`: 0 erros, 0 avisos.
+    - `cargo test --workspace`: 28 testes aprovados (1 em `app`, 3 em `cli`, 16 em `core`, 8 em `e2e`).
+    - Subcomandos legados (`id`, `devices`, `duckive`, `doctor`) testados e operacionais.
+
+
