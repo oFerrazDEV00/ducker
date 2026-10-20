@@ -24,6 +24,7 @@ pub struct UpdateCheckResult {
     pub asset_name: Option<String>,
     pub asset_size: Option<u64>,
     pub asset_url: Option<String>,
+    pub checksum_url: Option<String>,
     pub status_message: String,
 }
 
@@ -35,11 +36,11 @@ pub struct UpdateDownloadProgress {
     pub pct: u32,
 }
 
-#[derive(Deserialize)]
-struct GitHubAsset {
-    name: String,
-    size: u64,
-    browser_download_url: String,
+#[derive(Deserialize, Clone)]
+pub struct GitHubAsset {
+    pub name: String,
+    pub size: u64,
+    pub browser_download_url: String,
 }
 
 #[derive(Deserialize)]
@@ -103,6 +104,7 @@ pub async fn check_github_update(current_version: &str) -> Result<UpdateCheckRes
                 asset_name: None,
                 asset_size: None,
                 asset_url: None,
+                checksum_url: None,
                 status_message: format!(
                     "Não foi possível conectar ao servidor de atualizações ({}). Verifique sua conexão.",
                     e
@@ -122,6 +124,7 @@ pub async fn check_github_update(current_version: &str) -> Result<UpdateCheckRes
             asset_name: None,
             asset_size: None,
             asset_url: None,
+            checksum_url: None,
             status_message: format!(
                 "Você já está utilizando a compilação mais recente do Ducker (v{}). Nenhum release publicado em {}.",
                 current_version, GITHUB_REPO
@@ -146,6 +149,14 @@ pub async fn check_github_update(current_version: &str) -> Result<UpdateCheckRes
 
     // Seleciona o asset ideal para a plataforma atual
     let matching_asset = select_platform_asset(&release.assets);
+
+    // Busca arquivo de checksums SHA-256 se publicado
+    let checksum_asset = release.assets.iter().find(|a| {
+        a.name.eq_ignore_ascii_case("sha256sums.txt")
+            || a.name.eq_ignore_ascii_case("sha256sums")
+            || a.name.ends_with(".sha256")
+    });
+    let checksum_url = checksum_asset.map(|a| a.browser_download_url.clone());
 
     let (asset_name, asset_size, asset_url) = if let Some(asset) = matching_asset {
         (
@@ -186,15 +197,16 @@ pub async fn check_github_update(current_version: &str) -> Result<UpdateCheckRes
         asset_name,
         asset_size,
         asset_url,
+        checksum_url,
         status_message,
     })
 }
 
 /// Identifica o asset de download correspondente ao sistema operacional e arquitetura.
-fn select_platform_asset(assets: &[GitHubAsset]) -> Option<&GitHubAsset> {
+pub fn select_platform_asset(assets: &[GitHubAsset]) -> Option<&GitHubAsset> {
     #[cfg(target_os = "windows")]
     {
-        // Prioriza o instalador NSIS setup.exe, depois .msi, depois qualquer .exe
+        // Prioriza o instalador NSIS setup.exe, depois .msi, depois qualquer .exe que não seja CLI
         assets
             .iter()
             .find(|a| a.name.ends_with("-setup.exe"))
@@ -221,14 +233,24 @@ fn select_platform_asset(assets: &[GitHubAsset]) -> Option<&GitHubAsset> {
     }
 }
 
-/// Realiza o download seguro do instalador com relatório de progresso e cancelamento.
+/// Sanitiza o nome do arquivo recebido para evitar directory traversal.
+pub fn sanitize_asset_name(asset_name: &str) -> String {
+    std::path::Path::new(asset_name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "ducker-update.bin".to_string())
+}
+
+/// Realiza o download seguro do instalador com relatório de progresso, cancelamento e verificação de integridade.
 pub async fn download_installer<F>(
     asset_url: &str,
     asset_name: &str,
+    checksum_url: Option<&str>,
     save_dir: &PathBuf,
     on_progress: F,
     cancel_flag: Arc<AtomicBool>,
-) -> Result<PathBuf, String>
+) -> Result<(PathBuf, String), String>
 where
     F: Fn(UpdateDownloadProgress) + Send + Sync + 'static,
 {
@@ -239,10 +261,13 @@ where
     std::fs::create_dir_all(save_dir)
         .map_err(|e| format!("Falha ao criar diretório temporário: {}", e))?;
 
-    let file_path = save_dir.join(asset_name);
-    let mut file = tokio::fs::File::create(&file_path)
+    let clean_name = sanitize_asset_name(asset_name);
+    let final_path = save_dir.join(&clean_name);
+    let part_path = save_dir.join(format!("{}.part", clean_name));
+
+    let mut file = tokio::fs::File::create(&part_path)
         .await
-        .map_err(|e| format!("Falha ao criar arquivo local: {}", e))?;
+        .map_err(|e| format!("Falha ao criar arquivo temporário local: {}", e))?;
 
     let client = reqwest::Client::builder()
         .user_agent("Ducker-Updater")
@@ -256,7 +281,7 @@ where
         .map_err(|e| format!("Falha ao iniciar download da atualização: {}", e))?;
 
     if !response.status().is_success() {
-        let _ = tokio::fs::remove_file(&file_path).await;
+        let _ = tokio::fs::remove_file(&part_path).await;
         return Err(format!(
             "Download falhou com status HTTP {}",
             response.status()
@@ -270,15 +295,23 @@ where
 
     while let Some(chunk_res) = stream.next().await {
         if cancel_flag.load(Ordering::Relaxed) {
-            let _ = tokio::fs::remove_file(&file_path).await;
+            let _ = tokio::fs::remove_file(&part_path).await;
             return Err("Download cancelado pelo usuário.".into());
         }
 
-        let chunk = chunk_res.map_err(|e| format!("Erro durante transmissão de dados: {}", e))?;
+        let chunk = match chunk_res {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = tokio::fs::remove_file(&part_path).await;
+                return Err(format!("Erro durante transmissão de dados: {}", e));
+            }
+        };
+
         use tokio::io::AsyncWriteExt;
-        file.write_all(&chunk)
-            .await
-            .map_err(|e| format!("Erro ao gravar dados no disco: {}", e))?;
+        if let Err(e) = file.write_all(&chunk).await {
+            let _ = tokio::fs::remove_file(&part_path).await;
+            return Err(format!("Erro ao gravar dados no disco: {}", e));
+        }
 
         hasher.update(&chunk);
         downloaded += chunk.len() as u64;
@@ -297,13 +330,65 @@ where
     }
 
     use tokio::io::AsyncWriteExt;
-    file.flush()
-        .await
-        .map_err(|e| format!("Erro ao sincronizar arquivo com disco: {}", e))?;
+    if let Err(e) = file.flush().await {
+        let _ = tokio::fs::remove_file(&part_path).await;
+        return Err(format!("Erro ao sincronizar arquivo com disco: {}", e));
+    }
+    drop(file);
 
-    let _hash_hex = hex::encode(hasher.finalize());
+    let computed_hash = hex::encode(hasher.finalize()).to_lowercase();
 
-    Ok(file_path)
+    // Se houver arquivo de checksums oficial publicado, valida a integridade
+    if let Some(cs_url) = checksum_url {
+        if cs_url.starts_with("https://") {
+            if let Ok(cs_res) = client.get(cs_url).send().await {
+                if cs_res.status().is_success() {
+                    if let Ok(cs_text) = cs_res.text().await {
+                        let expected = parse_checksum_for_asset(&cs_text, &clean_name);
+                        if let Some(exp_hash) = expected {
+                            if !exp_hash.eq_ignore_ascii_case(&computed_hash) {
+                                let _ = tokio::fs::remove_file(&part_path).await;
+                                return Err(format!(
+                                    "Falha de integridade: SHA-256 esperado {} não confere com o baixado {}.",
+                                    exp_hash, computed_hash
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Renomeia o arquivo .part para o destino final de forma atômica
+    if let Err(e) = tokio::fs::rename(&part_path, &final_path).await {
+        let _ = tokio::fs::remove_file(&part_path).await;
+        return Err(format!("Erro ao finalizar arquivo baixado: {}", e));
+    }
+
+    Ok((final_path, computed_hash))
+}
+
+/// Extrai o hash SHA-256 esperado de uma tabela de checksums (formato SHA256SUMS ou similar).
+pub fn parse_checksum_for_asset(checksum_text: &str, asset_name: &str) -> Option<String> {
+    for line in checksum_text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.len() >= 2 {
+            let hash = parts[0];
+            let filename = parts[1].trim_start_matches('*');
+            if filename == asset_name && hash.len() == 64 {
+                return Some(hash.to_lowercase());
+            }
+        } else if parts.len() == 1 && parts[0].len() == 64 {
+            // Arquivo .sha256 de um único hash
+            return Some(parts[0].to_lowercase());
+        }
+    }
+    None
 }
 
 /// Executa o instalador baixado com confirmação.
@@ -314,25 +399,40 @@ pub fn run_installer(path: &PathBuf) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new(path)
-            .spawn()
-            .map_err(|e| format!("Falha ao executar o instalador: {}", e))?;
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if ext.eq_ignore_ascii_case("msi") {
+            std::process::Command::new("msiexec")
+                .args(["/i", path.to_str().unwrap_or_default()])
+                .spawn()
+                .map_err(|e| format!("Falha ao iniciar o instalador MSI: {}", e))?;
+        } else {
+            std::process::Command::new(path)
+                .spawn()
+                .map_err(|e| format!("Falha ao executar o instalador: {}", e))?;
+        }
         Ok(())
     }
 
     #[cfg(target_os = "linux")]
     {
-        // Garante permissão de execução caso seja AppImage
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(metadata) = std::fs::metadata(path) {
-            let mut perms = metadata.permissions();
-            perms.set_mode(0o755);
-            let _ = std::fs::set_permissions(path, perms);
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if ext.eq_ignore_ascii_case("appimage") {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = std::fs::metadata(path) {
+                let mut perms = metadata.permissions();
+                perms.set_mode(0o755);
+                let _ = std::fs::set_permissions(path, perms);
+            }
+            std::process::Command::new(path)
+                .spawn()
+                .map_err(|e| format!("Falha ao iniciar o pacote AppImage: {}", e))?;
+        } else {
+            // Para .deb ou outros pacotes no Linux, abre gerenciador padrão de arquivos/pacotes
+            std::process::Command::new("xdg-open")
+                .arg(path)
+                .spawn()
+                .map_err(|e| format!("Falha ao abrir pacote Linux com xdg-open: {}", e))?;
         }
-
-        std::process::Command::new(path)
-            .spawn()
-            .map_err(|e| format!("Falha ao iniciar o pacote Linux: {}", e))?;
         Ok(())
     }
 
@@ -355,5 +455,32 @@ mod tests {
         assert!(!is_newer_version("0.2.0", "0.2.0"));
         assert!(!is_newer_version("0.3.0", "0.2.0"));
         assert!(!is_newer_version("1.0.0", "0.9.9"));
+    }
+
+    #[test]
+    fn test_asset_name_sanitization() {
+        assert_eq!(sanitize_asset_name("Ducker-setup.exe"), "Ducker-setup.exe");
+        assert_eq!(sanitize_asset_name("../../etc/passwd"), "passwd");
+        assert_eq!(
+            sanitize_asset_name("..\\..\\Windows\\System32\\cmd.exe"),
+            "cmd.exe"
+        );
+    }
+
+    #[test]
+    fn test_parse_checksum_for_asset() {
+        let checksums = r#"
+# Checksums for Ducker v0.2.0
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 *Ducker_0.2.0_x64-setup.exe
+a1b2c3d4e5f60718293a4b5c6d7e8f901234567890abcdef1234567890abcdef Ducker_0.2.0_x64.msi
+"#;
+        let found = parse_checksum_for_asset(checksums, "Ducker_0.2.0_x64-setup.exe");
+        assert_eq!(
+            found,
+            Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string())
+        );
+
+        let not_found = parse_checksum_for_asset(checksums, "other.exe");
+        assert_eq!(not_found, None);
     }
 }

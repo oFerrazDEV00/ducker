@@ -87,8 +87,23 @@ enum Commands {
         #[arg(default_value = "enable")]
         action: String,
     },
-    /// Executa o diagnóstico de rede, portas e certificados
-    Doctor,
+    /// Executa o diagnóstico de rede, portas e certificados (Debugger do Pato)
+    Doctor {
+        /// Exportar relatório de diagnóstico para arquivo Markdown
+        #[arg(long)]
+        export: Option<PathBuf>,
+    },
+    /// Alias para 'doctor': diagnóstico do sistema e laboratório de rede
+    Debug {
+        /// Exportar relatório de diagnóstico para arquivo Markdown
+        #[arg(long)]
+        export: Option<PathBuf>,
+    },
+    /// Gerencia e executa automações declarativas no formato .quack
+    Quack {
+        #[command(subcommand)]
+        action: QuackCommands,
+    },
     /// Visualiza o seu Duckive, progresso, inventário de cosméticos e conquistas
     Duckive {
         /// Equipar um item cosmético pelo ID
@@ -111,6 +126,26 @@ enum Commands {
     Open,
 }
 
+#[derive(Subcommand)]
+enum QuackCommands {
+    /// Executa uma automação declarativa .quack
+    Run {
+        /// Caminho para o arquivo .quack
+        file: PathBuf,
+        /// Simular a automação sem transferir dados na rede
+        #[arg(long)]
+        dry_run: bool,
+        /// Executar sem solicitar confirmação interativa
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+    /// Valida a sintaxe e os arquivos de uma automação .quack
+    Validate {
+        /// Caminho para o arquivo .quack
+        file: PathBuf,
+    },
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -127,7 +162,12 @@ async fn main() {
         }
     };
 
-    if identity.is_none() && !matches!(cli.command, Some(Commands::Doctor) | Some(Commands::Open)) {
+    if identity.is_none()
+        && !matches!(
+            cli.command,
+            Some(Commands::Doctor { .. }) | Some(Commands::Debug { .. }) | Some(Commands::Open)
+        )
+    {
         ui::print_banner();
         println!("\nBem-vindo ao {}!\n", style("Ducker").yellow().bold());
 
@@ -199,9 +239,19 @@ async fn main() {
             let enable = !action.eq_ignore_ascii_case("disable");
             commands::service::configure_autostart(enable);
         }
-        Some(Commands::Doctor) => {
-            commands::doctor::execute(identity.as_ref());
+        Some(Commands::Doctor { export }) | Some(Commands::Debug { export }) => {
+            commands::doctor::execute(identity.as_ref(), export.as_deref()).await;
         }
+        Some(Commands::Quack { action }) => match action {
+            QuackCommands::Validate { file } => {
+                commands::quack::validate(&file).await;
+            }
+            QuackCommands::Run { file, dry_run, yes } => {
+                if let Some(id) = identity.as_ref() {
+                    commands::quack::run(id, &file, dry_run, yes).await;
+                }
+            }
+        },
         Some(Commands::Duckive { equip, name }) | Some(Commands::Profile { equip, name }) => {
             if let Some(id) = identity.as_ref() {
                 commands::duckive::execute(id, &config_dir, equip, name);

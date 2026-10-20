@@ -1154,4 +1154,21 @@ mod tests {
             .iter()
             .any(|a| a.id == "first_flight" && a.unlocked));
     }
+
+    #[test]
+    fn text_transfer_unlocks_whatsapp_green_without_incrementing_file_count() {
+        let mut profile = DuckiveProfile::new("TextCheck");
+        let summary = profile.record_transfer(0, 42, false, 0.0, true);
+        assert_eq!(profile.files_sent_count, 0);
+        assert_eq!(profile.transfers_count, 1);
+        assert_eq!(profile.total_bytes_sent, 42);
+        assert!(summary
+            .newly_unlocked_achievements
+            .iter()
+            .any(|a| a.id == "whatsapp_green"));
+        assert!(profile
+            .achievements
+            .iter()
+            .any(|a| a.id == "whatsapp_green" && a.unlocked));
+    }
 }

@@ -47,6 +47,12 @@ pub enum DuckerError {
     #[error("Erro HTTP: {0}")]
     Http(#[from] reqwest::Error),
 
+    #[error("Erro de automação .quack: {0}")]
+    Quack(String),
+
+    #[error("Erro YAML: {0}")]
+    Yaml(#[from] serde_yaml::Error),
+
     #[error("{0}")]
     Custom(String),
 }
@@ -69,6 +75,8 @@ impl DuckerError {
             DuckerError::Io(_) => "IO_ERROR",
             DuckerError::Serialization(_) => "SERIALIZATION_ERROR",
             DuckerError::Http(_) => "HTTP_ERROR",
+            DuckerError::Quack(_) => "QUACK_ERROR",
+            DuckerError::Yaml(_) => "YAML_ERROR",
             DuckerError::Custom(_) => "ERROR",
         }
     }

@@ -264,7 +264,7 @@ async fn send_text(
     match res {
         Ok(()) => {
             let mut duckive = state.duckive.lock().await;
-            let summary = duckive.record_transfer(1, payload.text.len() as u64, false, 0.0, true);
+            let summary = duckive.record_transfer(0, payload.text.len() as u64, false, 0.0, true);
             let _ = duckive.save(&state.config_dir);
 
             if !summary.newly_unlocked_items.is_empty()
@@ -551,6 +551,7 @@ async fn check_for_updates() -> Result<updater::UpdateCheckResult, String> {
 async fn download_update(
     asset_url: String,
     asset_name: String,
+    checksum_url: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
@@ -561,9 +562,10 @@ async fn download_update(
     let save_dir = std::env::temp_dir().join("ducker-update");
     let app_handle = app.clone();
 
-    let downloaded_path = updater::download_installer(
+    let (downloaded_path, sha256_hash) = updater::download_installer(
         &asset_url,
         &asset_name,
+        checksum_url.as_deref(),
         &save_dir,
         move |progress| {
             let _ = app_handle.emit("ducker://update-download-progress", progress);
@@ -571,6 +573,8 @@ async fn download_update(
         cancel_flag,
     )
     .await?;
+
+    let _ = app.emit("ducker://update-download-complete", &sha256_hash);
 
     Ok(downloaded_path.to_string_lossy().to_string())
 }
@@ -586,6 +590,137 @@ async fn cancel_update_download(state: State<'_, Arc<AppState>>) -> Result<(), S
 async fn install_update(file_path: String) -> Result<(), String> {
     let path = PathBuf::from(file_path);
     updater::run_installer(&path)
+}
+
+#[tauri::command]
+async fn get_network_diagnostics(
+    state: State<'_, Arc<AppState>>,
+) -> Result<ducker_core::NetworkHealthReport, String> {
+    Ok(ducker_core::run_diagnostics(Some(&state.node), Some(&state.node.identity())).await)
+}
+
+#[tauri::command]
+async fn probe_peer_diagnostic(
+    ip: String,
+    port: u16,
+) -> Result<ducker_core::PeerDiagnosticProbe, String> {
+    let ip_addr: std::net::IpAddr = ip.parse().map_err(|e| format!("IP inválido: {}", e))?;
+    Ok(ducker_core::probe_peer(ip_addr, port, ducker_core::Protocol::Https, None).await)
+}
+
+#[tauri::command]
+async fn export_network_report(
+    format: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let report =
+        ducker_core::run_diagnostics(Some(&state.node), Some(&state.node.identity())).await;
+    match format.to_lowercase().as_str() {
+        "json" => Ok(report.to_json()),
+        _ => Ok(report.to_markdown()),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ValidateQuackPayload {
+    pub content: String,
+    pub base_dir: Option<String>,
+}
+
+#[tauri::command]
+async fn validate_quack_plan(
+    payload: ValidateQuackPayload,
+    state: State<'_, Arc<AppState>>,
+) -> Result<ducker_core::QuackPlan, String> {
+    let quack = ducker_core::QuackFile::parse_str(&payload.content).map_err(|e| e.to_string())?;
+    let base = match payload.base_dir {
+        Some(b) => PathBuf::from(b),
+        None => state.node.save_dir().to_path_buf(),
+    };
+    quack.resolve_plan(&base).map_err(|e| e.to_string())
+}
+
+#[derive(Deserialize)]
+pub struct RunQuackPayload {
+    pub content: String,
+    pub base_dir: Option<String>,
+    pub dry_run: Option<bool>,
+}
+
+#[tauri::command]
+async fn run_quack_automation(
+    payload: RunQuackPayload,
+    app: tauri::AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<ducker_core::QuackPlan, String> {
+    let quack = ducker_core::QuackFile::parse_str(&payload.content).map_err(|e| e.to_string())?;
+    let base = match payload.base_dir {
+        Some(b) => PathBuf::from(b),
+        None => state.node.save_dir().to_path_buf(),
+    };
+    let plan = quack.resolve_plan(&base).map_err(|e| e.to_string())?;
+    let is_dry_run = payload.dry_run.unwrap_or(quack.options.dry_run);
+
+    if is_dry_run {
+        return Ok(plan);
+    }
+
+    if plan.files.is_empty() {
+        return Err("Nenhum arquivo encontrado para envio nas fontes especificadas.".to_string());
+    }
+
+    let peers = state.node.peers();
+    let target_peer = if let Some(found) = plan.target.resolve_peer(&peers) {
+        found.clone()
+    } else if let Some(synthetic) = plan.target.to_synthetic_peer() {
+        synthetic
+    } else {
+        return Err(format!(
+            "Destinatário '{}' não encontrado na rede local.",
+            plan.target
+                .alias
+                .as_deref()
+                .or(plan.target.quac_id.as_deref())
+                .unwrap_or("desconhecido")
+        ));
+    };
+
+    let path_bufs: Vec<PathBuf> = plan.files.iter().map(|f| f.source_path.clone()).collect();
+    let total_sent_bytes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let total_clone = total_sent_bytes.clone();
+    let app_clone = app.clone();
+    let start_time = std::time::Instant::now();
+
+    state
+        .node
+        .send_files(
+            &target_peer,
+            path_bufs,
+            SendOptions::default(),
+            move |progress| {
+                total_clone.store(progress.total, std::sync::atomic::Ordering::Relaxed);
+                let _ = app_clone.emit("ducker://send-progress", progress);
+            },
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let bytes = total_sent_bytes.load(std::sync::atomic::Ordering::Relaxed);
+    let duration = start_time.elapsed().as_secs_f64().max(0.01);
+    let speed_mbps = (bytes as f64 / 1_048_576.0) / duration;
+
+    let mut duckive = state.duckive.lock().await;
+    let summary = duckive.record_transfer(plan.files.len() as u64, bytes, false, speed_mbps, false);
+    let _ = duckive.save(&state.config_dir);
+
+    if !summary.newly_unlocked_items.is_empty()
+        || !summary.newly_unlocked_achievements.is_empty()
+        || summary.level_up
+    {
+        let _ = app.emit("ducker://duckive-unlock", &summary);
+    }
+
+    Ok(plan)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -685,7 +820,12 @@ pub fn run() {
             check_for_updates,
             download_update,
             cancel_update_download,
-            install_update
+            install_update,
+            get_network_diagnostics,
+            probe_peer_diagnostic,
+            export_network_report,
+            validate_quack_plan,
+            run_quack_automation
         ])
         .run(tauri::generate_context!())
         .expect("Erro ao executar aplicativo Tauri");

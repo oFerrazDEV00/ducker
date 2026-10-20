@@ -211,5 +211,61 @@ cargo run -p ducker-cli -- send .\README.md --to <alias>
     - `cargo check --workspace`: 0 erros, 0 avisos.
     - `cargo test --workspace`: 28 testes aprovados (1 em `app`, 3 em `cli`, 16 em `core`, 8 em `e2e`).
     - Subcomandos legados (`id`, `devices`, `duckive`, `doctor`) testados e operacionais.
+- 2026-10-20 — Sessão 6 (Gemini):
+  * **TUI Aprimorada e Interatividade Completa (`cli/src/tui/`):**
+    - Adicionada barra de busca e filtragem dinâmica de peers em tempo real via atalho `[/]`, permitindo filtrar por apelido, IP ou modelo.
+    - Implementado autocompletar de caminhos de arquivos e pastas no modal de envio via `[Tab]`, consultando o sistema de arquivos em tempo real.
+    - Adicionada navegação interativa de cosméticos na aba Duckive (`↑`/`↓`), permitindo equipar/desequipar itens diretamente com `[Enter]` ou `[e]`.
+    - Modal interativo para renomear mascote Duckive (`[n]`) com persistência imediata no disco.
+    - Rodapé contextual dinâmico adaptando atalhos de acordo com a aba ativa e o estado de busca.
+  * **Correções e Refinamento do Duckive (`core/src/duckive.rs`):**
+    - Mensagens de texto agora gravadas com `files_sent: 0` para preservar a contagem estrita de arquivos reais, mantendo desbloqueio de conquistas de texto sem inflar contadores de arquivos.
+    - Validado desbloqueio lendário aos 50.000 arquivos (`whatsapp_green_skin` e conquista `whatsapp_green_legend`).
+  * **Segurança e Robustez no Atualizador Automático (`app/src-tauri/src/updater.rs`):**
+    - Download atômico em arquivo temporário `.part`, prevenindo corrupção em caso de erro de rede ou cancelamento.
+    - Sanitização estrita de nomes de arquivos (`sanitize_asset_name`) contra vulnerabilidades de path traversal.
+    - Validação de integridade SHA-256 em streaming contra o manifesto `SHA256SUMS.txt` da release oficial.
+    - Suporte a pacotes `.msi` via `msiexec /i` e executáveis `.exe` no Windows.
+    - Remoção de paths locais específicos de máquina em scripts e documentação.
+  * **Atualização de Versão para 0.5.0 e Geração dos Instaladores Oficiais:**
+    - Atualizada a versão para `0.5.0` em todos os manifestos (`core/Cargo.toml`, `cli/Cargo.toml`, `app/src-tauri/Cargo.toml`, `tauri.conf.json`, `package.json`, `index.html`, `main.js`, `README.md`).
+    - Identificada e solucionada a questão de execução no terminal: o PowerShell invocava `C:\Users\gabri\.cargo\bin\ducker.exe` (compilação antiga de 08/10/2026 que estava ativa em background). O processo antigo foi encerrado e substituído pelo novo binário `v0.5.0` com a TUI interativa.
+    - O script `ducker.bat` da raiz do projeto foi atualizado para priorizar o executável release (`target\release\ducker.exe`).
+    - Gerados com sucesso os novos pacotes de instalador em `dist/`:
+      * `dist/Ducker_0.5.0_x64-setup.exe` (6.49 MiB, instalador NSIS com assistente gráfico).
+      * `dist/Ducker_0.5.0_x64_en-US.msi` (9.21 MiB, pacote corporativo MSI).
+      * Removidos artefatos legados 0.2.0 da pasta `dist/`.
+- 2026-10-20 — Sessão 7 (Gemini) — **Lançamento Oficial Ducker v1.0.0**:
+  * **Sincronização Integral de Versão para 1.0.0:**
+    - Manifestos atualizados e alinhados: `core/Cargo.toml`, `cli/Cargo.toml`, `app/src-tauri/Cargo.toml`, `tauri.conf.json`, `package.json`, `index.html`, `main.js`, `README.md`.
+    - `Cargo.lock` atualizado e consistente.
+  * **Debugger do Pato — Laboratório Educacional de Redes (`core/src/diagnostics.rs`):**
+    - Módulo do core reutilizável pela CLI e pela interface gráfica.
+    - Detecção real de interfaces de rede físicas e virtuais, IPv4, IPv6, sub-redes, broadcast e flags (UP, Loopback, Multicast).
+    - Verificação de portas do protocolo LocalSend v2 (TCP e UDP 53317) com captura de erros de socket do SO (`os error 10048`).
+    - Diagnóstico de multicast UDP (grupo `224.0.0.167`) e suporte a varredura controlada de sub-rede (`scan_subnet`).
+    - Sonda ponta a ponta (`probe_peer`) com medição de RTT em milissegundos, status HTTP e validação de fingerprint TLS.
+    - Sistema de anomalias educativas com 5 dimensões: O que foi observado, O que significa, Causas prováveis, Próximo teste e Ação recomendada.
+    - Exportação de relatórios sanitizados de suporte em formatos Markdown e JSON (`ducker doctor --export` e botão na UI).
+  * **Formato .quack — Automação Declarativa de Envio (`core/src/quack.rs` & `cli/src/commands/quack.rs`):**
+    - Especificação formal Esquema v1 em YAML/JSON.
+    - Proteção estrita contra path traversal (`..` expressamente proibido nos caminhos de fontes).
+    - Suporte a filtros de inclusão e exclusão glob (`*.pdf`, `~*`, etc.), opções dry-run, política de conflito (`rename`/`skip`/`overwrite`), limites de tamanho (1 GB padrão) e limites de contagem de arquivos (1000 padrão).
+    - Comandos CLI: `ducker quack validate <arquivo>` e `ducker quack run <arquivo> [--dry-run] [-y]`.
+    - Interface gráfica: aba `Automação .quack` com editor integrado, modelos pré-definidos (Backup e Simulação), prévia de plano resolvido e log de execução.
+  * **Interface Desktop & Mobile (Tauri v2):**
+    - Integração completa da aba `Debugger do Pato` e `Automação .quack` na navegação lateral (desktop) e inferior (mobile).
+    - Layout responsivo, paleta amarela `#FFC83D`, sem dados falsos ou simulados.
+    - Comandos Tauri IPC expostos: `get_network_diagnostics`, `probe_peer_diagnostic`, `export_network_report`, `validate_quack_plan`, `run_quack_automation`.
+  * **Testes de Aceitação da Workspace:**
+    - `cargo fmt --check`: 100% aprovado.
+    - `cargo check --workspace`: 0 erros, 0 avisos.
+    - `cargo test --workspace`: 40 testes aprovados (3 em `ducker_app_lib`, 5 em `ducker-cli`, 24 em `ducker-core`, 8 em `e2e`), 0 falhas.
+  * **Instaladores e Binários v1.0.0 Gerados:**
+    - `dist/Ducker_1.0.0_x64-setup.exe` (6.74 MiB, SHA256: `E8BF8CF44A3A428D118E6596F84B840A0DC6438D3C3AD625776C0063D30F92AC`).
+    - `dist/Ducker_1.0.0_x64_en-US.msi` (9.57 MiB, SHA256: `F677E6B8A9E7CF553EAD8A28C19C9E35EA7945757EDD9186D6B80052DF013C97`).
+    - `C:\Users\gabri\.cargo\bin\ducker.exe` e `app/src-tauri/resources/ducker.exe` atualizados para `v1.0.0`.
+
+
 
 

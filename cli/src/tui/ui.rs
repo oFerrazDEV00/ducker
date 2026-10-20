@@ -81,6 +81,9 @@ pub fn draw(f: &mut Frame, app: &mut TuiApp) {
                 app.tick,
             );
         }
+        ModalMode::RenameDuckive { value } => {
+            render_rename_modal(f, size, value, app.tick);
+        }
         ModalMode::None => {}
     }
 }
@@ -148,7 +151,7 @@ fn render_header(f: &mut Frame, area: Rect, app: &TuiApp) {
             "Be simple, be duck.",
             Style::default().fg(TEXT_MUTED).italic(),
         ),
-        Span::styled(" [v0.2.0]", Style::default().fg(DUCK_YELLOW_DARK)),
+        Span::styled(" [v1.0.0]", Style::default().fg(DUCK_YELLOW_DARK)),
         Span::raw("   "),
         Span::styled("● ONLINE", Style::default().fg(SUCCESS_GREEN).bold()),
         Span::styled(
@@ -253,7 +256,17 @@ fn render_radar_view(f: &mut Frame, area: Rect, app: &mut TuiApp) {
 }
 
 fn render_peers_list(f: &mut Frame, area: Rect, app: &TuiApp) {
-    let title = format!(" Dispositivos na Rede ({}) ", app.peers.len());
+    let filtered = app.filtered_peers();
+    let title = if !app.filter_query.is_empty() {
+        format!(
+            " Dispositivos ({}/{} filtrados) ",
+            filtered.len(),
+            app.peers.len()
+        )
+    } else {
+        format!(" Dispositivos na Rede ({}) ", app.peers.len())
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -294,12 +307,70 @@ fn render_peers_list(f: &mut Frame, area: Rect, app: &TuiApp) {
         return;
     }
 
-    let items: Vec<ListItem> = app
-        .peers
+    let (list_area, search_area) = if app.is_filtering || !app.filter_query.is_empty() {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(4)])
+            .split(area);
+        (chunks[1], Some(chunks[0]))
+    } else {
+        (area, None)
+    };
+
+    if let Some(s_area) = search_area {
+        let cursor_char = if app.is_filtering && (app.tick / 2) % 2 == 0 {
+            "█"
+        } else {
+            " "
+        };
+        let search_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(if app.is_filtering {
+                Style::default().fg(DUCK_YELLOW).bold()
+            } else {
+                Style::default().fg(TEXT_DIM)
+            })
+            .title(Span::styled(
+                " 🔍 Filtrar Dispositivos [/] ",
+                Style::default().fg(DUCK_YELLOW),
+            ));
+
+        let search_text = Line::from(vec![
+            Span::styled(" Buscar: ", Style::default().fg(TEXT_MUTED)),
+            Span::styled(&app.filter_query, Style::default().fg(TEXT_MAIN).bold()),
+            Span::styled(cursor_char, Style::default().fg(DUCK_YELLOW)),
+            Span::styled(
+                format!("  ({} de {} dispositivos)", filtered.len(), app.peers.len()),
+                Style::default().fg(TEXT_DIM),
+            ),
+        ]);
+        f.render_widget(Paragraph::new(search_text).block(search_block), s_area);
+    }
+
+    if filtered.is_empty() {
+        let not_found = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                format!("Nenhum dispositivo encontrado para '{}'", app.filter_query),
+                Style::default().fg(TEXT_MUTED),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Pressione [Esc] para limpar o filtro.",
+                Style::default().fg(TEXT_DIM),
+            )),
+        ])
+        .alignment(Alignment::Center)
+        .block(block);
+        f.render_widget(not_found, list_area);
+        return;
+    }
+
+    let items: Vec<ListItem> = filtered
         .iter()
-        .enumerate()
-        .map(|(idx, peer)| {
-            let is_selected = idx == app.selected_peer_idx;
+        .map(|(original_idx, peer)| {
+            let is_selected = *original_idx == app.selected_peer_idx;
 
             let icon = match peer.info.device_type {
                 Some(ducker_core::DeviceType::Mobile) => "📱",
@@ -362,7 +433,7 @@ fn render_peers_list(f: &mut Frame, area: Rect, app: &TuiApp) {
         .collect();
 
     let list = List::new(items).block(block);
-    f.render_widget(list, area);
+    f.render_widget(list, list_area);
 }
 
 fn render_active_transfer(f: &mut Frame, area: Rect, app: &TuiApp) {
@@ -556,6 +627,7 @@ fn render_duckive_view(f: &mut Frame, area: Rect, app: &TuiApp) {
         Line::from(vec![
             Span::styled(" Nome do Mascote: ", Style::default().fg(TEXT_MUTED)),
             Span::styled(&view.name, Style::default().fg(DUCK_YELLOW).bold()),
+            Span::styled("  [n: renomear]", Style::default().fg(TEXT_DIM)),
         ]),
         Line::from(vec![
             Span::styled(" Nível Atual:     ", Style::default().fg(TEXT_MUTED)),
@@ -630,7 +702,11 @@ fn render_duckive_view(f: &mut Frame, area: Rect, app: &TuiApp) {
     let items_list: Vec<ListItem> = view
         .items
         .iter()
-        .map(|it| {
+        .enumerate()
+        .map(|(idx, it)| {
+            let is_selected = idx == app.selected_cosmetic_idx;
+            let prefix = if is_selected { "► " } else { "  " };
+
             let status = if it.equipped {
                 Span::styled(" [EQUIPADO] ", Style::default().fg(SUCCESS_GREEN).bold())
             } else if it.unlocked {
@@ -642,16 +718,30 @@ fn render_duckive_view(f: &mut Frame, area: Rect, app: &TuiApp) {
                 )
             };
 
-            Line::from(vec![
+            let line = Line::from(vec![
+                Span::styled(prefix, Style::default().fg(DUCK_YELLOW).bold()),
                 Span::raw(format!("{} ", it.item.icon_emoji)),
-                Span::styled(&it.item.name, Style::default().fg(TEXT_MAIN).bold()),
+                Span::styled(
+                    &it.item.name,
+                    if is_selected {
+                        Style::default().fg(DUCK_YELLOW).bold()
+                    } else {
+                        Style::default().fg(TEXT_MAIN).bold()
+                    },
+                ),
                 status,
                 Span::styled(
                     format!("({})", it.item.description),
                     Style::default().fg(TEXT_DIM),
                 ),
-            ])
-            .into()
+            ]);
+
+            let item = ListItem::new(line);
+            if is_selected {
+                item.style(Style::default().bg(BG_CARD_HIGHLIGHT))
+            } else {
+                item
+            }
         })
         .collect();
 
@@ -659,7 +749,7 @@ fn render_duckive_view(f: &mut Frame, area: Rect, app: &TuiApp) {
         Block::default()
             .borders(Borders::BOTTOM)
             .border_style(Style::default().fg(TEXT_DIM))
-            .title(" Inventário de Cosméticos "),
+            .title(" Cosméticos [↑/↓ Selecionar • Enter Equipar] "),
     );
     f.render_widget(cosmetics_widget, right_rows[0]);
 
@@ -703,19 +793,27 @@ fn render_help_view(f: &mut Frame, area: Rect, _app: &TuiApp) {
     f.render_widget(block, area);
 
     let help_text = vec![
-        Line::from(Span::styled(" Atahos e Navegação do Terminal Ducker", Style::default().fg(DUCK_YELLOW).bold())),
+        Line::from(Span::styled(" Atalhos e Navegação do Terminal Ducker", Style::default().fg(DUCK_YELLOW).bold())),
         Line::from(""),
         Line::from(vec![
             Span::styled("  [↑] ou [k]        ", Style::default().fg(DUCK_YELLOW).bold()),
-            Span::styled("Seleciona o dispositivo anterior na lista", Style::default().fg(TEXT_MAIN)),
+            Span::styled("Navega na lista de dispositivos ou cosméticos", Style::default().fg(TEXT_MAIN)),
         ]),
         Line::from(vec![
             Span::styled("  [↓] ou [j]        ", Style::default().fg(DUCK_YELLOW).bold()),
-            Span::styled("Seleciona o próximo dispositivo na lista", Style::default().fg(TEXT_MAIN)),
+            Span::styled("Navega na lista de dispositivos ou cosméticos", Style::default().fg(TEXT_MAIN)),
+        ]),
+        Line::from(vec![
+            Span::styled("  [/]               ", Style::default().fg(DUCK_YELLOW).bold()),
+            Span::styled("Filtrar dispositivos por nome, IP ou modelo", Style::default().fg(TEXT_MAIN)),
         ]),
         Line::from(vec![
             Span::styled("  [s]               ", Style::default().fg(DUCK_YELLOW).bold()),
             Span::styled("Enviar arquivo ou pasta para o dispositivo selecionado", Style::default().fg(TEXT_MAIN)),
+        ]),
+        Line::from(vec![
+            Span::styled("  [Tab] no envio    ", Style::default().fg(DUCK_YELLOW).bold()),
+            Span::styled("Autocompletar nomes de arquivos e pastas no modal de envio", Style::default().fg(TEXT_MAIN)),
         ]),
         Line::from(vec![
             Span::styled("  [t]               ", Style::default().fg(DUCK_YELLOW).bold()),
@@ -724,6 +822,14 @@ fn render_help_view(f: &mut Frame, area: Rect, _app: &TuiApp) {
         Line::from(vec![
             Span::styled("  [r]               ", Style::default().fg(DUCK_YELLOW).bold()),
             Span::styled("Atualizar radar e forçar busca ativa de dispositivos na rede", Style::default().fg(TEXT_MAIN)),
+        ]),
+        Line::from(vec![
+            Span::styled("  [Enter] / [e]     ", Style::default().fg(DUCK_YELLOW).bold()),
+            Span::styled("Equipar / desequipar cosmético na aba Duckive", Style::default().fg(TEXT_MAIN)),
+        ]),
+        Line::from(vec![
+            Span::styled("  [n]               ", Style::default().fg(DUCK_YELLOW).bold()),
+            Span::styled("Renomear mascote na aba Duckive", Style::default().fg(TEXT_MAIN)),
         ]),
         Line::from(vec![
             Span::styled("  [d]               ", Style::default().fg(DUCK_YELLOW).bold()),
@@ -739,7 +845,7 @@ fn render_help_view(f: &mut Frame, area: Rect, _app: &TuiApp) {
         ]),
         Line::from(vec![
             Span::styled("  [Esc]             ", Style::default().fg(DUCK_YELLOW).bold()),
-            Span::styled("Fechar janelas modais ou cancelar ações", Style::default().fg(TEXT_MAIN)),
+            Span::styled("Fechar janelas modais, limpar filtros ou cancelar ações", Style::default().fg(TEXT_MAIN)),
         ]),
         Line::from(vec![
             Span::styled("  [q] ou [Ctrl+C]   ", Style::default().fg(DUCK_YELLOW).bold()),
@@ -768,19 +874,55 @@ fn render_footer(f: &mut Frame, area: Rect, app: &TuiApp) {
         Span::raw("")
     };
 
-    let footer_line = Line::from(vec![
-        Span::styled(" [↑/↓] Navegar ", Style::default().fg(TEXT_DIM)),
-        Span::styled("[s] Enviar ", Style::default().fg(DUCK_YELLOW).bold()),
-        Span::styled("[t] Texto ", Style::default().fg(DUCK_YELLOW).bold()),
-        Span::styled("[r] Buscar ", Style::default().fg(INFO_BLUE)),
-        Span::styled("[d] Duckive ", Style::default().fg(DUCK_YELLOW_DARK)),
-        Span::styled("[Tab] Abas ", Style::default().fg(TEXT_DIM)),
-        Span::styled("[?] Ajuda ", Style::default().fg(TEXT_DIM)),
-        Span::styled("[q] Sair ", Style::default().fg(ERROR_RED)),
-        status_span,
-    ]);
+    let footer_spans = if app.is_filtering {
+        vec![
+            Span::styled(" [Busca] ", Style::default().fg(DUCK_YELLOW).bold()),
+            Span::styled("Digite para filtrar  ", Style::default().fg(TEXT_MAIN)),
+            Span::styled("[↑/↓] Navegar  ", Style::default().fg(TEXT_DIM)),
+            Span::styled("[Enter] Fixar  ", Style::default().fg(INFO_BLUE)),
+            Span::styled("[Esc] Limpar e fechar", Style::default().fg(ERROR_RED)),
+            status_span,
+        ]
+    } else {
+        match app.active_tab {
+            ActiveTab::Radar => vec![
+                Span::styled(" [↑/↓] Navegar ", Style::default().fg(TEXT_DIM)),
+                Span::styled("[/] Filtrar ", Style::default().fg(INFO_BLUE)),
+                Span::styled("[s] Enviar ", Style::default().fg(DUCK_YELLOW).bold()),
+                Span::styled("[t] Texto ", Style::default().fg(DUCK_YELLOW).bold()),
+                Span::styled("[r] Buscar ", Style::default().fg(INFO_BLUE)),
+                Span::styled("[d] Duckive ", Style::default().fg(DUCK_YELLOW_DARK)),
+                Span::styled("[Tab] Abas ", Style::default().fg(TEXT_DIM)),
+                Span::styled("[?] Ajuda ", Style::default().fg(TEXT_DIM)),
+                Span::styled("[q] Sair ", Style::default().fg(ERROR_RED)),
+                status_span,
+            ],
+            ActiveTab::Duckive => vec![
+                Span::styled(" [↑/↓] Navegar cosméticos ", Style::default().fg(TEXT_DIM)),
+                Span::styled(
+                    "[Enter/e] Equipar ",
+                    Style::default().fg(SUCCESS_GREEN).bold(),
+                ),
+                Span::styled(
+                    "[n] Renomear mascote ",
+                    Style::default().fg(DUCK_YELLOW).bold(),
+                ),
+                Span::styled("[Tab] Abas ", Style::default().fg(TEXT_DIM)),
+                Span::styled("[1] Radar ", Style::default().fg(TEXT_MUTED)),
+                Span::styled("[q] Sair ", Style::default().fg(ERROR_RED)),
+                status_span,
+            ],
+            ActiveTab::Help => vec![
+                Span::styled(" [1] Radar ", Style::default().fg(DUCK_YELLOW).bold()),
+                Span::styled("[2] Duckive ", Style::default().fg(DUCK_YELLOW_DARK)),
+                Span::styled("[Tab] Próxima Aba ", Style::default().fg(TEXT_DIM)),
+                Span::styled("[q] Sair ", Style::default().fg(ERROR_RED)),
+                status_span,
+            ],
+        }
+    };
 
-    f.render_widget(Paragraph::new(footer_line), area);
+    f.render_widget(Paragraph::new(Line::from(footer_spans)), area);
 }
 
 fn render_incoming_modal(
@@ -899,6 +1041,46 @@ fn render_input_modal(
     ];
 
     f.render_widget(Paragraph::new(text), inner);
+}
+
+fn render_rename_modal(f: &mut Frame, area: Rect, value: &str, tick: u64) {
+    let modal_area = centered_rect(60, 30, area);
+    f.render_widget(Clear, modal_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(DUCK_YELLOW).bold())
+        .title(Span::styled(
+            " 🦆 Renomear Mascote Duckive ",
+            Style::default().fg(DUCK_YELLOW).bold(),
+        ));
+
+    let inner = block.inner(modal_area);
+    f.render_widget(block, modal_area);
+
+    let cursor = if (tick / 2) % 2 == 0 { "█" } else { " " };
+
+    let text = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "Digite o novo nome para o seu companheiro:",
+            Style::default().fg(TEXT_MAIN),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(" > ", Style::default().fg(DUCK_YELLOW).bold()),
+            Span::styled(value, Style::default().fg(TEXT_MAIN).bold()),
+            Span::styled(cursor, Style::default().fg(DUCK_YELLOW)),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            " [Enter] Salvar Nome   [Esc] Cancelar",
+            Style::default().fg(TEXT_DIM),
+        )]),
+    ];
+
+    f.render_widget(Paragraph::new(text).alignment(Alignment::Center), inner);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

@@ -1,6 +1,6 @@
 [package]
 name = "ducker-app"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2021"
 description = "Ducker GUI app implementing LocalSend v2 (Tauri v2)"
 

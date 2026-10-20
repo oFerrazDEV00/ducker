@@ -118,8 +118,11 @@ if exist "%MSI_DIR%" (
         echo    %%f
         for %%a in ("%%f") do echo    Size: %%~za bytes
     )
+)
+
 :: Copy to dist folder in project root for convenience
 if not exist "%PROJECT_ROOT%\dist" mkdir "%PROJECT_ROOT%\dist"
+if exist "%PROJECT_ROOT%\dist\*.*" del /Q "%PROJECT_ROOT%\dist\*.*"
 if exist "%NSIS_DIR%\*.exe" copy /Y "%NSIS_DIR%\*.exe" "%PROJECT_ROOT%\dist\" >nul
 if exist "%MSI_DIR%\*.msi" copy /Y "%MSI_DIR%\*.msi" "%PROJECT_ROOT%\dist\" >nul
 

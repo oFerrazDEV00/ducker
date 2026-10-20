@@ -77,6 +77,22 @@
           </svg>
           <span>Configurações</span>
         </button>
+
+        <button class="nav-item" data-page="debugger">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+          <span>Debugger do Pato</span>
+          <span class="nav-badge nav-badge-yellow">Lab</span>
+        </button>
+
+        <button class="nav-item" data-page="quack">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+          <span>Automação .quack</span>
+        </button>
       </nav>
 
       <div class="sidebar-footer">
@@ -642,7 +658,7 @@
                 </svg>
                 <h4>Atualizações do Ducker</h4>
               </div>
-              <span class="version-pill" id="currentVersionBadge">v0.2.0</span>
+              <span class="version-pill" id="currentVersionBadge">v1.0.0</span>
             </div>
 
             <p class="updater-desc">
@@ -706,10 +722,225 @@
                 <img src="assets/logo.png" alt="Ducker Logo" class="about-brand-logo">
               </div>
               <div class="about-text-content">
-                <strong>Ducker v0.2.0</strong>
+                <strong>Ducker v1.0.0</strong>
                 <p>Implementação Rust pura do protocolo LocalSend v2.1. Criptografia mTLS P2P ponto a ponto.</p>
                 <small class="text-dim">Be simple, be duck • Feito com 💛 por Fael</small>
               </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- PAGE: DEBUGGER DO PATO (LABORATÓRIO DE REDES) -->
+      <main class="page-content" id="page-debugger">
+        <div class="subpage-header">
+          <div>
+            <div class="page-title-badge-row">
+              <h2>Debugger do Pato</h2>
+              <span class="badge badge-yellow">Laboratório de Redes v1.0.0</span>
+            </div>
+            <p>Diagnóstico educacional, interfaces ativas, teste de portas, descoberta multicast e radar de nós.</p>
+          </div>
+          <div class="header-action-buttons">
+            <button class="btn btn-secondary" id="btnExportDiagMd">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" x2="12" y1="15" y2="3"/>
+              </svg>
+              <span>Exportar MD</span>
+            </button>
+            <button class="btn btn-secondary" id="btnExportDiagJson">
+              <span>Exportar JSON</span>
+            </button>
+            <button class="btn btn-primary" id="btnRunDiagnostics">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 4v6h-6M1 20v-6h6"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              <span>Executar Diagnóstico</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="debugger-container">
+          <!-- Visão Geral / Status Geral -->
+          <div class="debugger-card health-summary-card" id="diagSummaryCard">
+            <div class="health-header-row">
+              <div class="health-badge-wrap">
+                <span class="health-indicator-circle status-good" id="diagHealthDot"></span>
+                <span class="health-title" id="diagHealthTitle">Rede Saudável</span>
+              </div>
+              <span class="health-timestamp" id="diagTimestamp">Última checagem: agora</span>
+            </div>
+            <p class="health-desc" id="diagHealthDesc">
+              Todas as interfaces e serviços essenciais do Ducker estão operando dentro dos parâmetros ideais.
+            </p>
+            <div class="debugger-metrics-grid">
+              <div class="debug-metric-box">
+                <span class="metric-label">Interfaces Ativas</span>
+                <strong class="metric-value" id="diagInterfacesCount">--</strong>
+              </div>
+              <div class="debug-metric-box">
+                <span class="metric-label">Porta TCP (LocalSend)</span>
+                <strong class="metric-value status-text-good" id="diagTcpPortStatus">53317 (Livre)</strong>
+              </div>
+              <div class="debug-metric-box">
+                <span class="metric-label">Porta UDP (Multicast)</span>
+                <strong class="metric-value status-text-good" id="diagUdpPortStatus">53317 (Livre)</strong>
+              </div>
+              <div class="debug-metric-box">
+                <span class="metric-label">Descoberta Multicast</span>
+                <strong class="metric-value status-text-good" id="diagMulticastStatus">Ativo (224.0.0.167)</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Diagnóstico Técnico e Anomalias Educativas -->
+          <div class="debugger-card">
+            <div class="card-header-row">
+              <h4>🩺 Diagnóstico Técnico & Recomendações Educativas</h4>
+              <span class="badge" id="diagAnomaliesBadge">0 Problemas</span>
+            </div>
+            <div class="anomalies-container" id="diagAnomaliesList">
+              <!-- Injetado dinamicamente -->
+            </div>
+          </div>
+
+          <!-- Radar de Dispositivos e Sonda de Conectividade -->
+          <div class="debugger-card">
+            <div class="card-header-row">
+              <h4>📡 Radar de Dispositivos & Sonda Ativa (Ping/Info)</h4>
+              <button class="btn btn-secondary btn-sm" id="btnDiagScanSubnet">Varredura Sub-rede</button>
+            </div>
+            <div class="probe-tool-row">
+              <input type="text" id="inputProbeIp" placeholder="IP do dispositivo (ex: 192.168.1.50)" class="probe-input">
+              <input type="number" id="inputProbePort" value="53317" placeholder="Porta" class="probe-port-input">
+              <button class="btn btn-accent-yellow btn-sm" id="btnProbeCustomPeer">Testar Conectividade</button>
+            </div>
+            <div class="probe-result-box" id="diagProbeResultBox" style="display: none;"></div>
+            <div class="peers-radar-table-wrap">
+              <table class="debugger-table" id="diagPeersTable">
+                <thead>
+                  <tr>
+                    <th>Dispositivo</th>
+                    <th>IP : Porta</th>
+                    <th>Método</th>
+                    <th>QUAC ID</th>
+                    <th>Fingerprint</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="diagPeersTableBody">
+                  <!-- Injetado dinamicamente -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Interfaces de Rede Detalhadas -->
+          <div class="debugger-card">
+            <h4>🌐 Interfaces de Rede Detectadas no Sistema</h4>
+            <div class="interfaces-grid" id="diagInterfacesGrid">
+              <!-- Injetado dinamicamente -->
+            </div>
+          </div>
+
+          <!-- Metadados de Tráfego e Conectividade -->
+          <div class="debugger-card">
+            <h4>📊 Resumo Observacional de Tráfego Local</h4>
+            <div class="traffic-summary-grid">
+              <div class="traffic-box">
+                <span class="traffic-title">Protocolo Base</span>
+                <span class="traffic-val">LocalSend v2 (HTTPS + TLS 1.3)</span>
+                <small class="text-dim">Criptografia mTLS P2P com certificado autoassinado efêmero.</small>
+              </div>
+              <div class="traffic-box">
+                <span class="traffic-title">Escopo de Rede</span>
+                <span class="traffic-val">Rede Local (LAN Privada)</span>
+                <small class="text-dim">Sem tráfego para servidores externos ou nuvem de terceiros.</small>
+              </div>
+              <div class="traffic-box">
+                <span class="traffic-title">Privacidade de Dados</span>
+                <span class="traffic-val">Zero Rastreamento / Sem Sniffing</span>
+                <small class="text-dim">O Ducker inspeciona apenas conexões direcionadas a ele próprio.</small>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </main>
+
+      <!-- PAGE: AUTOMAÇÃO .QUACK -->
+      <main class="page-content" id="page-quack">
+        <div class="subpage-header">
+          <div>
+            <div class="page-title-badge-row">
+              <h2>Automação .quack</h2>
+              <span class="badge badge-yellow">Esquema Declarativo v1</span>
+            </div>
+            <p>Envie lotes de arquivos de maneira reproduzível, declarativa e segura sem scripts invasivos.</p>
+          </div>
+          <div class="header-action-buttons">
+            <button class="btn btn-secondary" id="btnQuackTemplateBackup">Modelo: Backup</button>
+            <button class="btn btn-secondary" id="btnQuackTemplateDryRun">Modelo: Simulação</button>
+          </div>
+        </div>
+
+        <div class="quack-container">
+          <div class="quack-editor-card">
+            <div class="card-header-row">
+              <h4>📝 Definição da Tarefa (.quack)</h4>
+              <span class="version-pill">schema: "1"</span>
+            </div>
+            <p class="quack-hint">
+              Descreva sua tarefa em formato YAML ou JSON. Caminhos relativos são resolvidos a partir da pasta padrão de downloads.
+            </p>
+            <div class="quack-textarea-wrap">
+              <textarea id="quackInputEditor" class="quack-textarea" rows="14" spellcheck="false" placeholder="Cole aqui seu arquivo .quack..."></textarea>
+            </div>
+            <div class="quack-options-row">
+              <label class="quack-checkbox-label">
+                <input type="checkbox" id="quackDryRunCheck">
+                <span>Modo Dry-Run (apenas simular, sem enviar dados)</span>
+              </label>
+              <div class="quack-buttons">
+                <button class="btn btn-secondary" id="btnValidateQuack">Validar Plano</button>
+                <button class="btn btn-primary" id="btnRunQuack">Executar Automação 🚀</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="quack-preview-card">
+            <h4>📋 Plano de Execução & Arquivos Resolvidos</h4>
+            <div id="quackPlanPreviewEmpty" class="quack-empty-state">
+              <div class="empty-duck-emoji">⚡</div>
+              <p>Nenhuma automação validada ainda. Clique em <strong>Validar Plano</strong> para inspecionar os arquivos antes do envio.</p>
+            </div>
+
+            <div id="quackPlanPreviewContent" style="display: none;">
+              <div class="quack-plan-summary" id="quackPlanSummaryBox">
+                <!-- Resumo gerado -->
+              </div>
+              <div class="quack-files-table-wrap">
+                <table class="debugger-table">
+                  <thead>
+                    <tr>
+                      <th>Arquivo de Origem</th>
+                      <th>Destino Relativo</th>
+                      <th>Tamanho</th>
+                    </tr>
+                  </thead>
+                  <tbody id="quackFilesTableBody">
+                    <!-- Linhas geradas -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="quack-log-box" id="quackLogBox" style="display: none;">
+              <h5>Histórico de Execução:</h5>
+              <pre class="quack-log-output" id="quackLogOutput"></pre>
             </div>
           </div>
         </div>
@@ -749,14 +980,12 @@
           <span>Dispositivos</span>
         </button>
 
-        <button class="mobile-nav-item" data-page="transfers">
+        <button class="mobile-nav-item" data-page="debugger">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="m16 3 4 4-4 4"/>
-            <path d="M20 7H4"/>
-            <path d="m8 21-4-4 4-4"/>
-            <path d="M4 17h16"/>
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="m9 12 2 2 4-4"/>
           </svg>
-          <span>Histórico</span>
+          <span>Lab</span>
         </button>
 
         <button class="mobile-nav-item" data-page="settings">

@@ -59,6 +59,9 @@ pub enum ModalMode {
         value: String,
         target_peer: Peer,
     },
+    RenameDuckive {
+        value: String,
+    },
 }
 
 pub struct TuiApp {
@@ -67,6 +70,9 @@ pub struct TuiApp {
     pub node: Arc<Node>,
     pub peers: Vec<Peer>,
     pub selected_peer_idx: usize,
+    pub filter_query: String,
+    pub is_filtering: bool,
+    pub selected_cosmetic_idx: usize,
     pub duckive: DuckiveProfile,
     pub active_transfer: Option<TransferInfo>,
     pub logs: Vec<LogEntry>,
@@ -89,6 +95,9 @@ impl TuiApp {
             node,
             peers: Vec::new(),
             selected_peer_idx: 0,
+            filter_query: String::new(),
+            is_filtering: false,
+            selected_cosmetic_idx: 0,
             duckive,
             active_transfer: None,
             logs: Vec::new(),
@@ -108,7 +117,7 @@ impl TuiApp {
             LogKind::Success,
         );
         app.add_log(
-            "Pressione [r] para buscar dispositivos, [d] para Duckive ou [?] para ajuda."
+            "Pressione [r] para buscar dispositivos, [/] para filtrar, [d] para Duckive ou [?] para ajuda."
                 .to_string(),
             LogKind::Info,
         );
@@ -135,22 +144,130 @@ impl TuiApp {
         self.status_message = Some((msg, Instant::now()));
     }
 
+    pub fn filtered_peers(&self) -> Vec<(usize, &Peer)> {
+        let q = self.filter_query.trim().to_lowercase();
+        self.peers
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| {
+                if q.is_empty() {
+                    return true;
+                }
+                p.info.alias.to_lowercase().contains(&q)
+                    || p.ip.to_string().contains(&q)
+                    || p.info
+                        .quac_id
+                        .map(|id| id.to_string().contains(&q))
+                        .unwrap_or(false)
+                    || p.info.fingerprint.to_lowercase().contains(&q)
+            })
+            .collect()
+    }
+
     pub fn selected_peer(&self) -> Option<&Peer> {
         self.peers.get(self.selected_peer_idx)
     }
 
+    #[allow(dead_code)]
     pub fn select_next_peer(&mut self) {
         if !self.peers.is_empty() {
             self.selected_peer_idx = (self.selected_peer_idx + 1) % self.peers.len();
         }
     }
 
+    #[allow(dead_code)]
     pub fn select_prev_peer(&mut self) {
         if !self.peers.is_empty() {
             if self.selected_peer_idx == 0 {
                 self.selected_peer_idx = self.peers.len() - 1;
             } else {
                 self.selected_peer_idx -= 1;
+            }
+        }
+    }
+
+    pub fn select_next_filtered_peer(&mut self) {
+        let matches = self.filtered_peers();
+        if matches.is_empty() {
+            return;
+        }
+        let current_pos = matches
+            .iter()
+            .position(|(idx, _)| *idx == self.selected_peer_idx);
+        let next_pos = match current_pos {
+            Some(pos) => (pos + 1) % matches.len(),
+            None => 0,
+        };
+        self.selected_peer_idx = matches[next_pos].0;
+    }
+
+    pub fn select_prev_filtered_peer(&mut self) {
+        let matches = self.filtered_peers();
+        if matches.is_empty() {
+            return;
+        }
+        let current_pos = matches
+            .iter()
+            .position(|(idx, _)| *idx == self.selected_peer_idx);
+        let prev_pos = match current_pos {
+            Some(pos) => {
+                if pos == 0 {
+                    matches.len() - 1
+                } else {
+                    pos - 1
+                }
+            }
+            None => 0,
+        };
+        self.selected_peer_idx = matches[prev_pos].0;
+    }
+
+    pub fn select_next_cosmetic(&mut self) {
+        let count = self.duckive.to_view().items.len();
+        if count > 0 {
+            self.selected_cosmetic_idx = (self.selected_cosmetic_idx + 1) % count;
+        }
+    }
+
+    pub fn select_prev_cosmetic(&mut self) {
+        let count = self.duckive.to_view().items.len();
+        if count > 0 {
+            if self.selected_cosmetic_idx == 0 {
+                self.selected_cosmetic_idx = count - 1;
+            } else {
+                self.selected_cosmetic_idx -= 1;
+            }
+        }
+    }
+
+    pub fn toggle_equip_selected_cosmetic(&mut self) -> Result<String, String> {
+        let view = self.duckive.to_view();
+        let item_status = match view.items.get(self.selected_cosmetic_idx) {
+            Some(it) => it,
+            None => return Err("Nenhum cosmético selecionado".into()),
+        };
+
+        let item_id = item_status.item.id.clone();
+        let item_name = item_status.item.name.clone();
+
+        if !item_status.unlocked {
+            return Err(format!(
+                "Item '{}' está bloqueado ({}/{} arq).",
+                item_name, item_status.progress_current, item_status.progress_required
+            ));
+        }
+
+        if item_status.equipped {
+            self.duckive.unequip_slot(item_status.item.category);
+            let _ = self.duckive.save(&self.config_dir);
+            Ok(format!("Item '{}' desequipado.", item_name))
+        } else {
+            match self.duckive.equip_item(&item_id) {
+                Ok(()) => {
+                    let _ = self.duckive.save(&self.config_dir);
+                    Ok(format!("Item '{}' equipado com sucesso! 🦆", item_name))
+                }
+                Err(e) => Err(format!("Erro ao equipar: {}", e)),
             }
         }
     }
@@ -278,5 +395,62 @@ mod tests {
 
         assert_eq!(app.logs.len(), 80);
         assert!(app.logs[0].text.contains("99"));
+    }
+
+    #[tokio::test]
+    async fn test_filtered_peers_and_navigation() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("ducker-test-filt-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let id = Identity::generate("Tester").unwrap();
+        let mut config = NodeConfig::new(id.clone(), temp_dir.clone());
+        config.port = 0;
+        let (node, _) = Node::start(config).await.unwrap();
+        let mut app = TuiApp::new(id, temp_dir, Arc::new(node));
+
+        app.peers = vec![
+            mock_peer("iPhone do Fael", 10),
+            mock_peer("Notebook Linux", 20),
+            mock_peer("Celular Android", 30),
+        ];
+
+        // Sem filtro: todos aparecem
+        assert_eq!(app.filtered_peers().len(), 3);
+
+        // Filtro por 'phone'
+        app.filter_query = "phone".to_string();
+        let matches = app.filtered_peers();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].1.info.alias, "iPhone do Fael");
+
+        // Navegação de peers filtrados
+        app.filter_query = "o".to_string(); // Corresponde a "iPhone do Fael", "Notebook Linux" e "Android"
+        assert_eq!(app.filtered_peers().len(), 3);
+        app.select_next_filtered_peer();
+        assert_eq!(app.selected_peer_idx, 1);
+        app.select_prev_filtered_peer();
+        assert_eq!(app.selected_peer_idx, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cosmetic_tui_navigation_and_equip() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("ducker-test-cosm-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let id = Identity::generate("Tester").unwrap();
+        let mut config = NodeConfig::new(id.clone(), temp_dir.clone());
+        config.port = 0;
+        let (node, _) = Node::start(config).await.unwrap();
+        let mut app = TuiApp::new(id, temp_dir, Arc::new(node));
+
+        // Duckive inicial: default_duck está desbloqueado
+        app.selected_cosmetic_idx = 0;
+        let res = app.toggle_equip_selected_cosmetic();
+        assert!(res.is_ok());
+
+        // Item bloqueado (índice 1 é cap_ducker, requer 10 arquivos)
+        app.selected_cosmetic_idx = 1;
+        let res_locked = app.toggle_equip_selected_cosmetic();
+        assert!(res_locked.is_err());
     }
 }

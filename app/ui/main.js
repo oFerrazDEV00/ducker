@@ -173,7 +173,7 @@ const invoke = hasTauri ? window.__TAURI__.core.invoke : async (cmd, args) => {
       quac_id: 8492014,
       fingerprint: 'SHA256:7B9A2F45CD8812A9E3',
       port: 53317,
-      save_dir: 'C:/Users/Rafael/Downloads'
+      save_dir: '~/Downloads/Ducker'
     };
   }
   if (cmd === 'get_duckive_view') {
@@ -309,7 +309,7 @@ const invoke = hasTauri ? window.__TAURI__.core.invoke : async (cmd, args) => {
       is_debug: true,
       peer_count: currentPeers.length || 3,
       port: 53317,
-      save_dir: 'C:/Users/Rafael/Downloads',
+      save_dir: '~/Downloads/Ducker',
       total_files_sent: mockDuckiveView.filesSentCount,
       total_bytes_sent: mockDuckiveView.totalBytesSent,
       total_files_received: mockDuckiveView.filesReceivedCount,
@@ -324,19 +324,109 @@ const invoke = hasTauri ? window.__TAURI__.core.invoke : async (cmd, args) => {
   if (cmd === 'check_for_updates') {
     return {
       available: false,
-      currentVersion: '0.2.0',
-      latestVersion: '0.2.0',
-      releaseName: 'v0.2.0',
-      releaseNotes: 'Versão de desenvolvimento local.',
-      publishedAt: '2026-10-19',
+      currentVersion: '1.0.0',
+      latestVersion: '1.0.0',
+      releaseName: 'v1.0.0',
+      releaseNotes: 'Versão oficial de lançamento.',
+      publishedAt: '2026-10-20',
       assetName: null,
       assetSize: null,
       assetUrl: null,
-      statusMessage: 'O Ducker já está na versão mais recente (v0.2.0). 🦆'
+      statusMessage: 'O Ducker já está na versão mais recente (v1.0.0). 🦆'
     };
   }
   if (cmd === 'download_update') {
     return 'C:/fake/path/ducker-setup.exe';
+  }
+  if (cmd === 'get_network_diagnostics') {
+    return {
+      timestamp: new Date().toISOString(),
+      interfaces: [
+        {
+          name: "Wi-Fi (Principal)",
+          ips_v4: ["192.168.1.100"],
+          ips_v6: ["fe80::1a2b:3c4d:5e6f"],
+          subnets: ["192.168.1.0/24"],
+          broadcast_v4: "192.168.1.255",
+          is_loopback: false,
+          is_up: true,
+          is_multicast_capable: true
+        },
+        {
+          name: "Loopback Interface",
+          ips_v4: ["127.0.0.1"],
+          ips_v6: ["::1"],
+          subnets: ["127.0.0.0/8"],
+          broadcast_v4: null,
+          is_loopback: true,
+          is_up: true,
+          is_multicast_capable: false
+        }
+      ],
+      ports: [
+        { port: 53317, protocol: "TCP", state: "DISPONÍVEL", message: "Porta livre para receber conexões HTTP/HTTPS" },
+        { port: 53317, protocol: "UDP", state: "DISPONÍVEL", message: "Porta livre para multicast e anúncios de presença" }
+      ],
+      multicast: {
+        multicast_address: "224.0.0.167",
+        port: 53317,
+        status: "ATIVO",
+        active_interfaces_count: 1
+      },
+      discovered_peers: currentPeers.map(p => ({
+        ip: p.ip,
+        port: p.port,
+        protocol: p.protocol,
+        alias: p.info?.alias || "Peer",
+        quac_id: p.info?.quacId || "--------",
+        fingerprint: p.info?.fingerprint || "--------",
+        device_model: p.info?.deviceModel || "",
+        last_seen_ms: Date.now() - 5000,
+        discovery_method: "MULTICAST"
+      })),
+      anomalies: [],
+      overall_health: "SAUDÁVEL"
+    };
+  }
+  if (cmd === 'probe_peer_diagnostic') {
+    return {
+      peer_ip: args.ip,
+      peer_port: args.port,
+      reachable: true,
+      latency_ms: 18,
+      status_code: 200,
+      protocol: "https",
+      peer_alias: "Dispositivo Remoto",
+      fingerprint_match: true,
+      error_message: null
+    };
+  }
+  if (cmd === 'export_network_report') {
+    return "# Relatório de Diagnóstico de Rede Ducker v1.0.0\nGerado com sucesso!";
+  }
+  if (cmd === 'validate_quack_plan') {
+    return {
+      name: "Backup de Documentos",
+      target: { alias: "Fael-iPhone", quac_id: null, fingerprint: null, ip: "192.168.0.42", port: 53317 },
+      files: [
+        { source_path: "documento_projeto.pdf", relative_dest_name: "documento_projeto.pdf", size_bytes: 2048500 }
+      ],
+      total_bytes: 2048500,
+      file_count: 1,
+      dry_run: false,
+      conflict: "rename"
+    };
+  }
+  if (cmd === 'run_quack_automation') {
+    return {
+      name: "Envio Automático Concluído",
+      target: { alias: "Fael-iPhone", port: 53317 },
+      files: [{ source_path: "documento_projeto.pdf", relative_dest_name: "documento_projeto.pdf", size_bytes: 2048500 }],
+      total_bytes: 2048500,
+      file_count: 1,
+      dry_run: args.dry_run || false,
+      conflict: "rename"
+    };
   }
   if (cmd === 'cancel_update_download' || cmd === 'install_update') {
     return null;
@@ -440,6 +530,14 @@ function navigateToPage(pageName) {
       const layoutBox = document.querySelector('.chat-layout-box');
       if (layoutBox) layoutBox.classList.remove('mobile-in-chat');
     }
+  }
+
+  if (pageName === 'debugger') {
+    runNetworkDiagnostics();
+  }
+
+  if (pageName === 'quack') {
+    initQuackTemplates();
   }
 }
 
@@ -2690,7 +2788,8 @@ async function startDownloadUpdate(info) {
   try {
     const savedPath = await invoke('download_update', {
       assetUrl: info.assetUrl,
-      assetName: info.assetName
+      assetName: info.assetName,
+      checksumUrl: info.checksumUrl || null
     });
 
     downloadedInstallerPath = savedPath;
@@ -2703,7 +2802,7 @@ async function startDownloadUpdate(info) {
     if (updaterStatusDot) updaterStatusDot.className = 'updater-status-indicator dot-success';
     if (updaterStatusTitle) updaterStatusTitle.textContent = 'Download concluído e validado!';
     if (updaterStatusMsg) {
-      updaterStatusMsg.textContent = `O arquivo de atualização (${info.assetName}) está pronto para ser instalado. Clique no botão abaixo para prosseguir.`;
+      updaterStatusMsg.textContent = `O arquivo de atualização (${info.assetName}) foi baixado com integridade SHA-256 verificada. Clique no botão abaixo para prosseguir com a instalação.`;
     }
   } catch (err) {
     isDownloadingUpdate = false;
@@ -2752,6 +2851,483 @@ async function installUpdate() {
 btnCheckUpdates?.addEventListener('click', checkForUpdates);
 btnCancelUpdateDownload?.addEventListener('click', cancelUpdateDownload);
 btnInstallUpdate?.addEventListener('click', installUpdate);
+
+// ==================== TOAST HELPER ====================
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = 'chat-toast';
+  const icon = type === 'success' ? '✅' : (type === 'error' ? '❌' : (type === 'warning' ? '⚠️' : '🦆'));
+  toast.innerHTML = `
+    <div class="chat-toast-avatar">${icon}</div>
+    <div class="chat-toast-content">
+      <div class="chat-toast-title">Ducker</div>
+      <div class="chat-toast-text">${escapeHtml(message)}</div>
+    </div>
+    <button class="chat-toast-close" title="Fechar">✕</button>
+  `;
+  toast.querySelector('.chat-toast-close')?.addEventListener('click', () => toast.remove());
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-10px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+// ==================== DEBUGGER DO PATO (LABORATÓRIO DE REDES) ====================
+let lastDiagReport = null;
+
+async function runNetworkDiagnostics() {
+  const btn = document.getElementById('btnRunDiagnostics');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `
+      <svg class="spin-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+      </svg>
+      <span>Analisando Rede...</span>
+    `;
+  }
+
+  try {
+    const report = await invoke('get_network_diagnostics');
+    lastDiagReport = report;
+    renderDiagnosticsReport(report);
+  } catch (err) {
+    console.error('Falha ao obter diagnósticos de rede:', err);
+    showToast(`Erro no diagnóstico: ${err}`, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 4v6h-6M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        <span>Executar Diagnóstico</span>
+      `;
+    }
+  }
+}
+
+function renderDiagnosticsReport(report) {
+  if (!report) return;
+
+  // Health summary
+  const dot = document.getElementById('diagHealthDot');
+  const title = document.getElementById('diagHealthTitle');
+  const desc = document.getElementById('diagHealthDesc');
+  const ts = document.getElementById('diagTimestamp');
+
+  if (ts) {
+    const d = new Date(report.timestamp || Date.now());
+    ts.textContent = `Última checagem: ${d.toLocaleTimeString()}`;
+  }
+
+  const isHealthy = report.overall_health === 'SAUDÁVEL' || (report.anomalies && report.anomalies.length === 0);
+  const hasCritical = report.anomalies && report.anomalies.some(a => a.severity === 'CRÍTICO');
+
+  if (dot && title && desc) {
+    if (isHealthy) {
+      dot.className = 'health-indicator-circle status-good';
+      title.textContent = 'Rede Saudável e Operacional';
+      title.className = 'health-title status-text-good';
+      desc.textContent = 'Todas as interfaces ativas e portas do LocalSend v2 (TCP/UDP 53317) estão livres e respondendo.';
+    } else if (hasCritical) {
+      dot.className = 'health-indicator-circle status-danger';
+      title.textContent = 'Atenção: Anomalia Crítica de Rede';
+      title.className = 'health-title status-text-danger';
+      desc.textContent = 'Foram detectadas anomalias que impedem a descoberta ou a transferência local de arquivos.';
+    } else {
+      dot.className = 'health-indicator-circle status-warning';
+      title.textContent = 'Alerta: Advertência de Conectividade';
+      title.className = 'health-title status-text-warning';
+      desc.textContent = 'Algumas interfaces ou portas apresentam avisos. Consulte os detalhes educativos abaixo.';
+    }
+  }
+
+  // Metric boxes
+  const ifaceCountEl = document.getElementById('diagInterfacesCount');
+  if (ifaceCountEl) {
+    const upCount = (report.interfaces || []).filter(i => i.is_up && !i.is_loopback).length;
+    ifaceCountEl.textContent = `${upCount} ativas (${(report.interfaces || []).length} total)`;
+  }
+
+  const tcpPort = (report.ports || []).find(p => p.protocol === 'TCP');
+  const udpPort = (report.ports || []).find(p => p.protocol === 'UDP');
+  const tcpEl = document.getElementById('diagTcpPortStatus');
+  const udpEl = document.getElementById('diagUdpPortStatus');
+
+  if (tcpEl && tcpPort) {
+    tcpEl.textContent = `${tcpPort.port} (${tcpPort.state})`;
+    tcpEl.className = `metric-value ${tcpPort.state === 'DISPONÍVEL' ? 'status-text-good' : 'status-text-danger'}`;
+  }
+  if (udpEl && udpPort) {
+    udpEl.textContent = `${udpPort.port} (${udpPort.state})`;
+    udpEl.className = `metric-value ${udpPort.state === 'DISPONÍVEL' ? 'status-text-good' : 'status-text-danger'}`;
+  }
+
+  const mcastEl = document.getElementById('diagMulticastStatus');
+  if (mcastEl && report.multicast) {
+    mcastEl.textContent = `${report.multicast.status} (${report.multicast.multicast_address})`;
+    mcastEl.className = `metric-value ${report.multicast.status === 'ATIVO' ? 'status-text-good' : 'status-text-warning'}`;
+  }
+
+  // Anomalies list
+  const anomaliesBadge = document.getElementById('diagAnomaliesBadge');
+  const anomaliesList = document.getElementById('diagAnomaliesList');
+  if (anomaliesBadge) {
+    const count = (report.anomalies || []).length;
+    anomaliesBadge.textContent = `${count} ${count === 1 ? 'Anomalia' : 'Anomalias'}`;
+    anomaliesBadge.className = `badge ${count === 0 ? 'badge-yellow' : 'badge-danger'}`;
+  }
+
+  if (anomaliesList) {
+    if (!report.anomalies || report.anomalies.length === 0) {
+      anomaliesList.innerHTML = `
+        <div class="anomaly-card sev-info">
+          <div class="anomaly-header">
+            <span class="anomaly-title">✨ Nenhuma anomalia detectada</span>
+            <span class="badge badge-yellow">Tudo Certo</span>
+          </div>
+          <p class="anomaly-details">
+            Seu ambiente atende a todos os requisitos do protocolo LocalSend v2. A descoberta multicast está ligada e as portas estão desimpedidas.
+          </p>
+        </div>
+      `;
+    } else {
+      anomaliesList.innerHTML = report.anomalies.map(a => {
+        const sevClass = a.severity === 'CRÍTICO' ? 'sev-critico' : (a.severity === 'AVISO' ? 'sev-aviso' : 'sev-info');
+        return `
+          <div class="anomaly-card ${sevClass}">
+            <div class="anomaly-header">
+              <span class="anomaly-title">${escapeHtml(a.title)}</span>
+              <span class="badge ${a.severity === 'CRÍTICO' ? 'badge-danger' : 'badge-yellow'}">${escapeHtml(a.severity)}</span>
+            </div>
+            <p class="anomaly-details"><strong>O que foi observado:</strong> ${escapeHtml(a.observed)}</p>
+            <p class="anomaly-details"><strong>O que significa:</strong> ${escapeHtml(a.meaning)}</p>
+            <div class="anomaly-guide-box">
+              <div><strong>Causas prováveis:</strong> ${escapeHtml(a.probable_causes)}</div>
+              <div><strong>Próximo teste:</strong> ${escapeHtml(a.next_test)}</div>
+              <div><strong>Correção recomendada:</strong> ${escapeHtml(a.recommended_fix)}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  // Peers radar table
+  const peersTable = document.getElementById('diagPeersTableBody');
+  if (peersTable) {
+    const peers = report.discovered_peers || [];
+    if (peers.length === 0) {
+      peersTable.innerHTML = `
+        <tr>
+          <td colspan="6" style="text-align: center; color: var(--text-dim); padding: 20px;">
+            Nenhum dispositivo Ducker ou LocalSend descoberto na rede no momento.
+          </td>
+        </tr>
+      `;
+    } else {
+      peersTable.innerHTML = peers.map(p => `
+        <tr>
+          <td>
+            <strong>${escapeHtml(p.alias || 'Desconhecido')}</strong>
+            <small style="display:block; color: var(--text-dim); font-size: 0.75rem;">${escapeHtml(p.device_model || '')}</small>
+          </td>
+          <td class="mono">${escapeHtml(p.ip)}:${p.port}</td>
+          <td><span class="badge badge-yellow">${escapeHtml(p.discovery_method || 'MULTICAST')}</span></td>
+          <td class="mono">${escapeHtml(p.quac_id || '--------')}</td>
+          <td class="mono" style="font-size: 0.75rem;">${escapeHtml((p.fingerprint || '--------').slice(0, 16))}...</td>
+          <td>
+            <button class="btn btn-secondary btn-sm btn-probe-peer" data-ip="${escapeHtml(p.ip)}" data-port="${p.port}">
+              Sonda Ping
+            </button>
+          </td>
+        </tr>
+      `).join('');
+
+      peersTable.querySelectorAll('.btn-probe-peer').forEach(btn => {
+        btn.addEventListener('click', () => {
+          probePeer(btn.dataset.ip, parseInt(btn.dataset.port));
+        });
+      });
+    }
+  }
+
+  // Interfaces grid
+  const ifacesGrid = document.getElementById('diagInterfacesGrid');
+  if (ifacesGrid) {
+    ifacesGrid.innerHTML = (report.interfaces || []).map(i => {
+      const isUp = i.is_up;
+      const ipv4List = (i.ips_v4 || []).join(', ') || 'Nenhum IPv4';
+      const ipv6List = (i.ips_v6 || []).join(', ') || 'Nenhum IPv6';
+      const subnetsList = (i.subnets || []).join(', ') || 'Desconhecido';
+      return `
+        <div class="interface-card">
+          <div class="interface-header">
+            <span class="interface-name">${escapeHtml(i.name)}</span>
+            <span class="badge ${isUp ? 'badge-yellow' : 'badge-danger'}">${isUp ? 'UP' : 'DOWN'}</span>
+          </div>
+          <div class="interface-details">
+            <div><span>IPv4:</span> ${escapeHtml(ipv4List)}</div>
+            <div><span>Máscara/Prefixo:</span> ${escapeHtml(subnetsList)}</div>
+            <div><span>IPv6:</span> ${escapeHtml(ipv6List)}</div>
+            ${i.broadcast_v4 ? `<div><span>Broadcast:</span> ${escapeHtml(i.broadcast_v4)}</div>` : ''}
+          </div>
+          <div style="display: flex; gap: 6px; margin-top: 4px;">
+            ${i.is_loopback ? '<span class="badge" style="font-size: 0.7rem;">Loopback</span>' : ''}
+            ${i.is_multicast_capable ? '<span class="badge badge-yellow" style="font-size: 0.7rem;">Multicast Capaz</span>' : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+}
+
+async function probePeer(ip, port) {
+  const box = document.getElementById('diagProbeResultBox');
+  if (box) {
+    box.style.display = 'block';
+    box.innerHTML = `<em>Enviando sonda de teste para ${escapeHtml(ip)}:${port}...</em>`;
+  }
+
+  try {
+    const res = await invoke('probe_peer_diagnostic', { ip, port: parseInt(port) });
+    if (box) {
+      if (res.reachable) {
+        box.innerHTML = `
+          <div style="color: var(--status-online); font-weight: bold; margin-bottom: 4px;">
+            ✓ Conexão bem-sucedida com ${escapeHtml(res.peer_alias || ip)}!
+          </div>
+          <div><strong>Tempo de Resposta (RTT):</strong> ${res.latency_ms} ms</div>
+          <div><strong>Status HTTP:</strong> ${res.status_code || 200} OK</div>
+          <div><strong>Protocolo:</strong> ${escapeHtml(res.protocol || 'https')} (TLS 1.3)</div>
+          <div><strong>Validação de Fingerprint:</strong> ${res.fingerprint_match ? 'Correta (Pinning OK)' : 'Autoassinado legítimo'}</div>
+        `;
+      } else {
+        box.innerHTML = `
+          <div style="color: var(--danger-color); font-weight: bold; margin-bottom: 4px;">
+            ✕ Falha ao conectar em ${escapeHtml(ip)}:${port}
+          </div>
+          <div><strong>Erro:</strong> ${escapeHtml(res.error_message || 'Tempo limite excedido / Dispositivo inacessível')}</div>
+          <small class="text-dim">Dica: Verifique se o aparelho de destino está na mesma rede Wi-Fi e se o Ducker ou LocalSend está aberto.</small>
+        `;
+      }
+    }
+  } catch (err) {
+    if (box) {
+      box.innerHTML = `<span style="color: var(--danger-color);">Erro ao executar sonda: ${escapeHtml(String(err))}</span>`;
+    }
+  }
+}
+
+async function exportDiagReport(format) {
+  try {
+    const content = await invoke('export_network_report', { format });
+    const blob = new Blob([content], { type: format === 'json' ? 'application/json' : 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ducker-diagnostico-${Date.now()}.${format === 'json' ? 'json' : 'md'}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('Relatório de diagnóstico exportado com sucesso!', 'success');
+  } catch (err) {
+    showToast(`Erro ao exportar relatório: ${err}`, 'error');
+  }
+}
+
+// Event Listeners Debugger
+document.getElementById('btnRunDiagnostics')?.addEventListener('click', runNetworkDiagnostics);
+document.getElementById('btnDiagScanSubnet')?.addEventListener('click', async () => {
+  await scanSubnet();
+  runNetworkDiagnostics();
+});
+document.getElementById('btnExportDiagMd')?.addEventListener('click', () => exportDiagReport('markdown'));
+document.getElementById('btnExportDiagJson')?.addEventListener('click', () => exportDiagReport('json'));
+document.getElementById('btnProbeCustomPeer')?.addEventListener('click', () => {
+  const ip = document.getElementById('inputProbeIp')?.value.trim();
+  const port = document.getElementById('inputProbePort')?.value.trim() || '53317';
+  if (!ip) {
+    showToast('Informe o IP do dispositivo para a sonda.', 'warning');
+    return;
+  }
+  probePeer(ip, parseInt(port));
+});
+
+// ==================== AUTOMAÇÃO .QUACK ====================
+const QUACK_DEFAULT_BACKUP_YAML = `schema: "1"
+name: "Backup de Documentos e Notas"
+description: "Automação para envio rápido de arquivos locais de trabalho"
+target:
+  alias: "Fael-iPhone"
+  port: 53317
+sources:
+  - path: "documentos"
+    include:
+      - "*.pdf"
+      - "*.txt"
+      - "*.md"
+    exclude:
+      - "*.tmp"
+      - "~*"
+    recursive: true
+options:
+  dry_run: false
+  conflict: "rename"
+  max_total_bytes: 1073741824
+  max_file_count: 500
+  require_confirmation: false
+`;
+
+const QUACK_DEFAULT_DRYRUN_YAML = `schema: "1"
+name: "Simulação Dry-Run de Envio"
+description: "Verificação prévia do lote sem transmitir nenhum byte pela rede"
+target:
+  alias: "Notebook do Pai"
+  port: 53317
+sources:
+  - path: "."
+    include:
+      - "*.png"
+      - "*.jpg"
+    recursive: false
+options:
+  dry_run: true
+  conflict: "skip"
+`;
+
+function initQuackTemplates() {
+  const editor = document.getElementById('quackInputEditor');
+  if (editor && !editor.value.trim()) {
+    editor.value = QUACK_DEFAULT_BACKUP_YAML;
+  }
+}
+
+document.getElementById('btnQuackTemplateBackup')?.addEventListener('click', () => {
+  const editor = document.getElementById('quackInputEditor');
+  if (editor) editor.value = QUACK_DEFAULT_BACKUP_YAML;
+  showToast('Modelo de backup inserido no editor.', 'info');
+});
+
+document.getElementById('btnQuackTemplateDryRun')?.addEventListener('click', () => {
+  const editor = document.getElementById('quackInputEditor');
+  if (editor) editor.value = QUACK_DEFAULT_DRYRUN_YAML;
+  showToast('Modelo de simulação dry-run inserido.', 'info');
+});
+
+async function validateQuackPlan() {
+  const editor = document.getElementById('quackInputEditor');
+  const content = editor ? editor.value.trim() : '';
+  if (!content) {
+    showToast('O arquivo .quack não pode estar vazio.', 'warning');
+    return;
+  }
+
+  const emptyBox = document.getElementById('quackPlanPreviewEmpty');
+  const previewBox = document.getElementById('quackPlanPreviewContent');
+  const summaryBox = document.getElementById('quackPlanSummaryBox');
+  const tableBody = document.getElementById('quackFilesTableBody');
+
+  try {
+    const plan = await invoke('validate_quack_plan', { payload: { content, base_dir: null } });
+    if (emptyBox) emptyBox.style.display = 'none';
+    if (previewBox) previewBox.style.display = 'block';
+
+    if (summaryBox) {
+      const mb = (plan.total_bytes / (1024 * 1024)).toFixed(2);
+      summaryBox.innerHTML = `
+        <div><strong>Tarefa:</strong> ${escapeHtml(plan.name)}</div>
+        <div><strong>Destinatário Alvo:</strong> ${escapeHtml(plan.target?.alias || plan.target?.ip || 'Configurado')}</div>
+        <div><strong>Total de Arquivos:</strong> ${plan.file_count} arquivos (${mb} MB)</div>
+        <div><strong>Política de Conflito:</strong> ${escapeHtml(plan.conflict || 'rename')}</div>
+        <div><strong>Modo Dry-Run:</strong> ${plan.dry_run ? 'Sim (Apenas simulação)' : 'Não (Transferência real)'}</div>
+      `;
+    }
+
+    if (tableBody) {
+      if (!plan.files || plan.files.length === 0) {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="3" style="text-align: center; color: var(--text-dim); padding: 14px;">
+              Nenhum arquivo encontrado nos filtros e diretórios fornecidos.
+            </td>
+          </tr>
+        `;
+      } else {
+        tableBody.innerHTML = plan.files.map(f => {
+          const kb = (f.size_bytes / 1024).toFixed(1);
+          return `
+            <tr>
+              <td class="mono" style="font-size: 0.8rem;">${escapeHtml(f.source_path)}</td>
+              <td class="mono" style="font-size: 0.8rem;">${escapeHtml(f.relative_dest_name)}</td>
+              <td>${kb} KB</td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    showToast('Plano .quack validado com sucesso!', 'success');
+  } catch (err) {
+    showToast(`Erro na validação do .quack: ${err}`, 'error');
+  }
+}
+
+async function runQuackAutomation() {
+  const editor = document.getElementById('quackInputEditor');
+  const content = editor ? editor.value.trim() : '';
+  if (!content) {
+    showToast('O arquivo .quack não pode estar vazio.', 'warning');
+    return;
+  }
+
+  const dryRunCheck = document.getElementById('quackDryRunCheck');
+  const dryRun = dryRunCheck ? dryRunCheck.checked : false;
+
+  const logBox = document.getElementById('quackLogBox');
+  const logOutput = document.getElementById('quackLogOutput');
+
+  if (logBox) logBox.style.display = 'block';
+  if (logOutput) {
+    logOutput.textContent = `[${new Date().toLocaleTimeString()}] Iniciando automação .quack...\n`;
+  }
+
+  try {
+    const plan = await invoke('run_quack_automation', {
+      payload: {
+        content,
+        base_dir: null,
+        dry_run: dryRun
+      }
+    });
+
+    if (logOutput) {
+      logOutput.textContent += `[${new Date().toLocaleTimeString()}] Automação '${plan.name}' processada com sucesso!\n`;
+      logOutput.textContent += `Arquivos processados: ${plan.file_count}\nVolume: ${(plan.total_bytes / (1024 * 1024)).toFixed(2)} MB\n`;
+      if (dryRun || plan.dry_run) {
+        logOutput.textContent += `Status: DRY-RUN CONCLUÍDO (Nenhum byte foi transmitido na rede).\n`;
+      } else {
+        logOutput.textContent += `Status: TRANSFERÊNCIA CONCLUÍDA COM SUCESSO!\n`;
+      }
+    }
+    showToast(dryRun ? 'Simulação Dry-Run concluída com sucesso!' : 'Automação .quack executada com sucesso!', 'success');
+  } catch (err) {
+    if (logOutput) {
+      logOutput.textContent += `[${new Date().toLocaleTimeString()}] ERRO: ${err}\n`;
+    }
+    showToast(`Erro ao executar automação: ${err}`, 'error');
+  }
+}
+
+document.getElementById('btnValidateQuack')?.addEventListener('click', validateQuackPlan);
+document.getElementById('btnRunQuack')?.addEventListener('click', runQuackAutomation);
 
 // ==================== INICIALIZAÇÃO ====================
 initTheme();

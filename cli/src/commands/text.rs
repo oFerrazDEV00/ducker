@@ -141,7 +141,7 @@ pub async fn execute(identity: &Identity, text: String, to_query: Option<String>
             if let Ok(mut profile) =
                 ducker_core::DuckiveProfile::load_or_create(&config_dir, &identity.alias)
             {
-                let summary = profile.record_transfer(1, text.len() as u64, false, 0.0, true);
+                let summary = profile.record_transfer(0, text.len() as u64, false, 0.0, true);
                 let _ = profile.save(&config_dir);
 
                 for item in summary.newly_unlocked_items {
